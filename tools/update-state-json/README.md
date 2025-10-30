@@ -24,5 +24,12 @@ We should be able to run the script having `python3` only.
 
 ## Running
 
+Run using default values:
+
 `python3 src/main.py`
 
+Run using env variables:
+
+`python3 src/main.py --from-env`
+
+To see required env variables, check `src/inputs.py`.

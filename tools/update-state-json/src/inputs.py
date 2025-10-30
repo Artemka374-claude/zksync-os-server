@@ -55,6 +55,18 @@ class DeploymentInputs:
             run_make_permanent_rollup=parse_bool("RUN_MAKE_PERMANENT_ROLLUP", False),
             reuse_ctm_governance=parse_bool("REUSE_CTM_GOVERNANCE", True),
         )
+    
+    @classmethod
+    def default(cls) -> "DeploymentInputs":
+        return cls(
+            l1_rpc_url="http://localhost:8545",
+            deployer_key="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+            governor_key="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+            validator_sender_operator_commit_eth="0x883FD4817fC1f4060F490375373e6bb5CC8b9e2A",
+            validator_sender_operator_prove="0x4bD3B5134Bf77398dE26BaD475740C1dbF1a853d",
+            validator_sender_operator_execute="0x69474D7f42b6d881BA4099431CF799B22e53D2C7",
+            chain_id=271,
+        )
 
     def base_env(self) -> dict:
         env = os.environ.copy()

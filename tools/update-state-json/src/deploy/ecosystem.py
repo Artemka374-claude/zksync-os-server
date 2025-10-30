@@ -27,7 +27,7 @@ def prepare_config(inputs: DeploymentInputs) -> None:
         cfg_path = os.path.join(inputs.l1_contracts_dir, "script-config/config-deploy-l1.toml")
         update_toml_key(cfg_path, key, value)
 
-def deploy_ecosystem(inputs: DeploymentInputs) -> None:
+def deploy_ecosystem(inputs: DeploymentInputs) -> str:
     prepare_config(inputs)
 
     forge_script(
@@ -74,3 +74,5 @@ def deploy_ecosystem(inputs: DeploymentInputs) -> None:
         inputs,
         "Accept STM deployment tracker ownership",
     )
+
+    return bridgehub_proxy

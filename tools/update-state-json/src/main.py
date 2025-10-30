@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import tempfile
 import json
 
@@ -13,7 +14,10 @@ from utils import run_command
 
 
 def main(contracts_dir) -> None:
-    inputs = DeploymentInputs.from_env()
+    # get inputs from env if `--from-env` is provided, otherwise use defaults
+    inputs = DeploymentInputs.default()
+    if "--from-env" in os.sys.argv:
+        inputs = DeploymentInputs.from_env()
 
     state_path = "./out/zkos-l1-state.json"
     anvil = start_anvil(state_path)
@@ -36,7 +40,7 @@ def main(contracts_dir) -> None:
         inputs.genesis_commitment = genesis_commitment
         print("Genesis commitment:", genesis_commitment)
 
-        deploy_ecosystem(inputs)
+        bridgehub_proxy = deploy_ecosystem(inputs)
         deploy_ctm(inputs)
         bootstrap_chain(inputs)
 
@@ -63,7 +67,16 @@ def main(contracts_dir) -> None:
         stop_anvil(anvil)
         raise e
 
-    print("\nAll steps completed successfully.")
+    print("\n\n===============================\n\n")
+    print("All steps completed successfully.")
+    print(f"L1 BridgeHub proxy address: {bridgehub_proxy}")
+    print("To run the server, do the following:")
+    print("cp out/genesis.json ../../genesis/")
+    print("cp out/zkos-l1-state.json ../../")
+    print(f"export genesis_bridgehub_address={bridgehub_proxy}")
+    print(f"export genesis_chain_id={inputs.chain_id}")
+    print("Then run the server as usual.")
+    print("Alternatively, update the constants in the `node/bin/src/config.rs")
 
 
 if __name__ == "__main__":
