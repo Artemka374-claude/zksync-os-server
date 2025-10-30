@@ -1,5 +1,5 @@
 [package]
-name = "zksync_os_sequencer"
+name = "zksync_os_revm_consistency_checker"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -17,7 +17,6 @@ zksync_os_pipeline.workspace = true
 zksync_os_storage_api.workspace = true
 zksync_os_types.workspace = true
 zksync_os_multivm.workspace = true
-zksync_os_gas_adjuster.workspace = true
 
 zk_ee.workspace = true
 zk_os_basic_system.workspace = true
@@ -26,6 +25,11 @@ zksync_os_interface.workspace = true
 
 reth-primitives.workspace = true
 reth-execution-types = { workspace = true }
+reth-revm.workspace = true
+zksync-os-revm.workspace = true
+thiserror.workspace = true
+zksync_os_merkle_tree.workspace = true
+blake2.workspace = true
 
 alloy = { workspace = true, default-features = false, features = ["eips", "eip712", "dyn-abi", "rpc-types", "json-rpc"] }
 anyhow.workspace = true

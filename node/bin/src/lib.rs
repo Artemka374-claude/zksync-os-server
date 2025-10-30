@@ -7,13 +7,12 @@ mod command_source;
 pub mod config;
 mod en_remote_config;
 mod l1_provider;
-mod metadata;
+pub mod metadata;
 mod node_state_on_startup;
 mod priority_tree_steps;
 pub mod prover_api;
 mod prover_input_generator;
 mod replay_transport;
-pub mod sentry;
 mod state_initializer;
 pub mod tree_manager;
 pub mod zkstack_config;
@@ -21,7 +20,7 @@ pub mod zkstack_config;
 use crate::batch_sink::{BatchSink, NoOpSink};
 use crate::batcher::{Batcher, util::load_genesis_stored_batch_info};
 use crate::command_source::{ExternalNodeCommandSource, MainNodeCommandSource};
-use crate::config::{Config, ProverApiConfig};
+use crate::config::{Config, ProverApiConfig, gas_adjuster_config};
 use crate::en_remote_config::load_remote_config;
 use crate::l1_provider::build_node_l1_provider;
 use crate::metadata::NODE_VERSION;
@@ -51,6 +50,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use zksync_os_contract_interface::l1_discovery::L1State;
+use zksync_os_gas_adjuster::GasAdjuster;
 use zksync_os_genesis::{FileGenesisInputSource, Genesis, GenesisInputSource};
 use zksync_os_interface::types::BlockHashes;
 use zksync_os_l1_sender::batcher_model::{BatchEnvelope, FriProof};
@@ -63,6 +63,7 @@ use zksync_os_merkle_tree::{MerkleTree, RocksDBWrapper};
 use zksync_os_object_store::ObjectStoreFactory;
 use zksync_os_observability::GENERAL_METRICS;
 use zksync_os_pipeline::Pipeline;
+use zksync_os_revm_consistency_checker::node::RevmConsistencyChecker;
 use zksync_os_rpc::{RpcStorage, run_jsonrpsee_server};
 use zksync_os_sequencer::execution::Sequencer;
 use zksync_os_sequencer::execution::block_context_provider::BlockContextProvider;
@@ -232,6 +233,15 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         last_l1_executed_block,
     };
 
+    if let Some(block_rebuild) = &config.sequencer_config.block_rebuild {
+        assert!(
+            block_rebuild.from_block > node_startup_state.last_l1_committed_block,
+            "rebuild_from_block must be > last_l1_committed_block, got {} <= {}",
+            block_rebuild.from_block,
+            node_startup_state.last_l1_committed_block
+        );
+    }
+
     let desired_starting_block = if let Some(forced_starting_block_number) =
         config.general_config.force_starting_block_number
     {
@@ -247,18 +257,36 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             state.block_range_available().end() + 1,
         ]
         .into_iter()
+        .chain(
+            config
+                .sequencer_config
+                .block_rebuild
+                .as_ref()
+                .map(|c| c.from_block),
+        )
         .min()
         .unwrap()
+        .max(1)
     };
 
     let starting_block = if desired_starting_block < state.block_range_available().start() + 1 {
-        tracing::warn!(
+        // Starting from 1 used to work but with the current compacted state implementation it panics.
+        // The approach has to be re-evaluated if we want to keep compacted storage impl and what to do in this case.
+        // For now just panic early.
+        // TODO(compacted state): re-evaluate the approach.
+        panic!(
+            "Cannot start: desired_starting_block < state.block_range_available().start() + 1: {} < {}",
             desired_starting_block,
-            config.general_config.force_starting_block_number,
-            min_block_available_in_state = state.block_range_available().start() + 1,
-            "Desired starting block is not available in state. Starting from zero."
+            state.block_range_available().start() + 1
         );
-        1
+
+        // tracing::warn!(
+        //     desired_starting_block,
+        //     config.general_config.force_starting_block_number,
+        //     min_block_available_in_state = state.block_range_available().start() + 1,
+        //     "Desired starting block is not available in state. Starting from zero."
+        // );
+        // 1
     } else {
         desired_starting_block
     };
@@ -362,6 +390,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             ))
         };
 
+    let (pending_block_context_sender, pending_block_context_receiver) = watch::channel(None);
     tasks.spawn(
         run_jsonrpsee_server(
             config.rpc_config.clone().into(),
@@ -371,9 +400,29 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             l2_mempool.clone(),
             genesis_input_source,
             tx_acceptance_state_receiver,
+            pending_block_context_receiver,
         )
         .map(report_exit("JSON-RPC server")),
     );
+
+    tracing::info!("Initializing pubdata price provider");
+    let (pubdata_price_sender, pubdata_price_receiver) = watch::channel(None);
+    if config.sequencer_config.is_main_node() {
+        let gas_adjuster_config = gas_adjuster_config(
+            config.gas_adjuster_config.clone(),
+            l1_state.da_input_mode,
+            config.l1_sender_config.rollup_pubdata_mode,
+            config.l1_sender_config.max_priority_fee_per_gas_gwei,
+        );
+        let gas_adjuster = GasAdjuster::new(
+            l1_provider.clone().erased(),
+            gas_adjuster_config,
+            pubdata_price_sender,
+        )
+        .await
+        .unwrap();
+        tasks.spawn(gas_adjuster.run().map(report_exit("Gas adjuster server")));
+    }
 
     // ========== Start BlockContextProvider and its state ===========
     tracing::info!("Initializing BlockContextProvider");
@@ -404,6 +453,9 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         config.sequencer_config.fee_collector_address,
         config.sequencer_config.base_fee_override,
         config.sequencer_config.pubdata_price_override,
+        config.sequencer_config.native_price_override,
+        pubdata_price_receiver,
+        pending_block_context_sender,
     );
 
     // ========== Start Sequencer ===========
@@ -585,6 +637,11 @@ async fn run_main_node_pipeline(
             starting_block,
             block_time: config.sequencer_config.block_time,
             max_transactions_in_block: config.sequencer_config.max_transactions_in_block,
+            rebuild_options: config
+                .sequencer_config
+                .block_rebuild
+                .clone()
+                .map(Into::into),
         })
         .pipe(Sequencer {
             block_context_provider,
@@ -594,6 +651,12 @@ async fn run_main_node_pipeline(
             sequencer_config: config.sequencer_config.clone().into(),
             tx_acceptance_state_sender,
         })
+        .pipe_opt(
+            config
+                .sequencer_config
+                .revm_consistency_checker_enabled
+                .then(|| RevmConsistencyChecker::new(state.clone())),
+        )
         .pipe(TreeManager { tree: tree.clone() })
         .pipe(ProverInputGenerator {
             enable_logging: config.prover_input_generator_config.logging_enabled,
@@ -688,6 +751,12 @@ async fn run_en_pipeline(
             sequencer_config: config.sequencer_config.clone().into(),
             tx_acceptance_state_sender,
         })
+        .pipe_opt(
+            config
+                .sequencer_config
+                .revm_consistency_checker_enabled
+                .then(|| RevmConsistencyChecker::new(state.clone())),
+        )
         .pipe(TreeManager { tree: tree.clone() })
         .pipe(NoOpSink::new())
         .spawn(tasks);
