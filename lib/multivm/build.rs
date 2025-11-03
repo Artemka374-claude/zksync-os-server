@@ -21,11 +21,9 @@ fn main() {
         }
         let tag = match parse_git_tag(&package.id) {
             Ok(tag) => tag,
-            Err(_err) => {
-                // FIXME
-                // println!("cargo::error=failed to parse forward_system's git tag: {err}");
-                // return;
-                "v0.0.28".to_string()
+            Err(err) => {
+                println!("cargo::error=failed to parse forward_system's git tag: {err}");
+                return;
             }
         };
 
@@ -41,10 +39,6 @@ fn main() {
         ] {
             let path = format!("{dir}/{variant}.bin");
             if std::fs::exists(&path).expect("failed to check file existence") {
-                continue;
-            }
-            // FIXME
-            if tag == "v0.0.28" {
                 continue;
             }
             let resp = {
