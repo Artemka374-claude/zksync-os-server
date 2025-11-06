@@ -40,8 +40,8 @@ impl L1SenderCommand for ProofCommand {
         ))
     }
 
-    fn blob_sidecar(&self) -> BlobTransactionSidecar {
-        BlobTransactionSidecar::default()
+    fn blob_sidecar(&self) -> Option<BlobTransactionSidecar> {
+        None
     }
 }
 

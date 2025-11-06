@@ -31,7 +31,7 @@ impl L1SenderCommand for CommitCommand {
         ))
     }
 
-    fn blob_sidecar(&self) -> BlobTransactionSidecar {
+    fn blob_sidecar(&self) -> Option<BlobTransactionSidecar> {
         self.input.batch.batch_info.blob_sidecar.clone()
     }
 }

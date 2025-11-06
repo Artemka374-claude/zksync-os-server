@@ -20,7 +20,7 @@ pub trait L1SenderCommand:
     const MINED_STAGE: BatchExecutionStage;
     fn solidity_call(&self) -> impl SolCall;
 
-    fn blob_sidecar(&self) -> BlobTransactionSidecar;
+    fn blob_sidecar(&self) -> Option<BlobTransactionSidecar>;
 
     /// Only used for logging - as we send commands in bulk, it's natural to print a single range
     /// for the whole group, e.g. "1-3, 4, 5-6" instead of "1, 2, 3, 4, 5, 6"

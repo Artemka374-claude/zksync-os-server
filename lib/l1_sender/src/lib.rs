@@ -100,17 +100,30 @@ pub async fn run_l1_sender<Input: L1SenderCommand>(
         let pending_txs: Vec<(TransactionReceiptFuture, Input)> =
             futures::stream::iter(cmd_buffer.drain(..))
                 .then(|mut cmd| async {
-                    let tx_request = tx_request_with_gas_fields(
+                    let mut tx_request = tx_request_with_gas_fields(
                         &provider,
                         operator_address,
                         config.max_fee_per_gas(),
                         config.max_priority_fee_per_gas(),
-                        config.max_fee_per_blob_gas_wei as u128,
                     )
                     .await?
                     .with_to(to_address)
-                    .with_call(&cmd.solidity_call())
-                    .with_blob_sidecar(cmd.blob_sidecar());
+                    .with_call(&cmd.solidity_call());
+
+                    if let Some(blob_sidecar) = cmd.blob_sidecar() {
+                        let fee_per_blob_gas = provider.get_blob_base_fee().await?;
+
+                        if fee_per_blob_gas > config.max_fee_per_blob_gas_wei as u128 {
+                            tracing::warn!(
+                                max_fee_per_blob_gas = config.max_fee_per_blob_gas_wei as u128,
+                                fee_per_blob_gas = fee_per_blob_gas,
+                                "L1 sender's configured maxPriorityFeePerGas is lower than the one estimated from network"
+                            );
+                        }
+                        tx_request.set_max_fee_per_blob_gas(config.max_fee_per_blob_gas_wei as u128);
+                        tx_request.set_blob_sidecar(blob_sidecar);
+                    };
+
                     // We don't wait for receipt here, instead we register an alloy watcher that
                     // polls for the receipt in the background. This future resolves when the watcher
                     // finds it.
@@ -172,7 +185,6 @@ async fn tx_request_with_gas_fields(
     operator_address: Address,
     max_fee_per_gas: u128,
     max_priority_fee_per_gas: u128,
-    max_fee_per_blob_gas: u128,
 ) -> anyhow::Result<TransactionRequest> {
     let eip1559_est = provider.estimate_eip1559_fees().await?;
     tracing::debug!(
@@ -194,21 +206,10 @@ async fn tx_request_with_gas_fields(
         );
     }
 
-    let fee_per_blob_gas = provider.get_blob_base_fee().await?;
-
-    if fee_per_blob_gas > max_fee_per_blob_gas {
-        tracing::warn!(
-            max_fee_per_blob_gas = max_fee_per_blob_gas,
-            fee_per_blob_gas = fee_per_blob_gas,
-            "L1 sender's configured maxPriorityFeePerGas is lower than the one estimated from network"
-        );
-    }
-
     let tx = TransactionRequest::default()
         .with_from(operator_address)
         .with_max_fee_per_gas(max_fee_per_gas)
         .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
-        .with_max_fee_per_blob_gas(max_fee_per_blob_gas)
         // Default value for `max_aggregated_tx_gas` from zksync-era, should always be enough
         .with_gas_limit(15000000);
     Ok(tx)
