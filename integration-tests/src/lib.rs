@@ -187,7 +187,7 @@ impl Tester {
             l1_watcher_config: Default::default(),
             batcher_config: Default::default(),
             prover_input_generator_config: ProverInputGeneratorConfig {
-                logging_enabled: enable_prover,
+                logging_enabled: false,
                 ..Default::default()
             },
             prover_api_config,
@@ -222,7 +222,7 @@ impl Tester {
                     circuit_limit: 10000,
                     output_dir: output_dir.to_str().unwrap().to_string(),
                     trusted_setup_file: trusted_setup_file.to_string(),
-                    iterations: Some(1),
+                    iterations: Some(2),
                     fri_path: None,
                     max_snark_latency: None,
                     max_fris_per_snark: Some(1),
