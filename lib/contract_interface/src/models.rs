@@ -135,7 +135,9 @@ pub struct CommitBatchInfo {
     pub l2_da_commitment_scheme: DACommitmentScheme,
     pub da_commitment: B256,
     pub first_block_timestamp: u64,
+    pub first_block_number: u64,
     pub last_block_timestamp: u64,
+    pub last_block_number: u64,
     pub chain_id: u64,
     pub operator_da_input: Vec<u8>,
 }
@@ -152,7 +154,9 @@ impl From<CommitBatchInfo> for IExecutor::CommitBatchInfoZKsyncOS {
             value.l2_da_commitment_scheme.into(),
             value.da_commitment.into(),
             value.first_block_timestamp,
+            U256::from(value.first_block_number),
             value.last_block_timestamp,
+            U256::from(value.last_block_number),
             U256::from(value.chain_id),
             Bytes::from(value.operator_da_input),
         ))
@@ -171,7 +175,9 @@ impl From<IExecutor::CommitBatchInfoZKsyncOS> for CommitBatchInfo {
             l2_da_commitment_scheme: value.daCommitmentScheme.into(),
             da_commitment: value.daCommitment,
             first_block_timestamp: value.firstBlockTimestamp,
+            first_block_number: value.firstBlockNumber.to::<u64>(),
             last_block_timestamp: value.lastBlockTimestamp,
+            last_block_number: value.lastBlockNumber.to::<u64>(),
             chain_id: value.chainId.to::<u64>(),
             operator_da_input: value.operatorDAInput.as_ref().to_vec(),
         }

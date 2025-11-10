@@ -156,7 +156,9 @@ alloy::sol! {
             L2DACommitmentScheme daCommitmentScheme;
             bytes32 daCommitment;
             uint64 firstBlockTimestamp;
+            uint256 firstBlockNumber;
             uint64 lastBlockTimestamp;
+            uint256 lastBlockNumber;
             uint256 chainId;
             bytes operatorDAInput;
         }

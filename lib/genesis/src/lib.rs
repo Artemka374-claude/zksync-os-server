@@ -1,7 +1,10 @@
 use alloy::consensus::{EMPTY_OMMER_ROOT_HASH, Header};
 use alloy::eips::eip1559::INITIAL_BASE_FEE;
-use alloy::primitives::{Address, B64, B256, Bloom, U256};
+use alloy::hex;
+use alloy::network::Ethereum;
+use alloy::primitives::{Address, B64, B256, Bloom, Bytes, U256};
 use alloy::providers::{DynProvider, Provider};
+use alloy::rlp::Encodable;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEvent;
 use anyhow::Context;
@@ -26,8 +29,25 @@ pub struct GenesisInput {
     /// Initial contracts to deploy in genesis.
     /// Storage entries that set the contracts as deployed and preimages will be derived from this field.
     pub initial_contracts: Vec<(Address, alloy::primitives::Bytes)>,
-    /// Additional (not related to contract deployments) storage entries to add in genesis state.
-    pub additional_storage: Vec<(B256, B256)>,
+
+    /// "Pretty" additional storage in address -> key -> value form.
+    /// Keys and values must be 32 bytes (B256).
+    /// Example:
+    /// {
+    ///   "0x...1000c": { "0x00..00": "0x...800f" },
+    ///   "0x...800f": {
+    ///     "0x3608...2bbc": "0x504c4a...f87",
+    ///     "0xb531...6103": "0x0000...1000c"
+    ///   }
+    /// }
+    #[serde(default)]
+    pub additional_storage: BTreeMap<Address, BTreeMap<B256, B256>>,
+
+    /// Raw (already flattened) additional storage, kept for backward compatibility.
+    /// Same format as before.
+    #[serde(default)]
+    pub additional_storage_raw: Vec<(B256, B256)>,
+
     /// Execution version used for genesis.
     pub execution_version: u32,
     /// The expected root hash of the genesis state.
@@ -120,6 +140,23 @@ pub struct GenesisState {
     pub expected_genesis_root: B256,
 }
 
+fn flat_storage_key_for_contract(address: Address, key: B256) -> B256 {
+    // Flat key = blake2s256( pad32(address) || key )
+    let mut bytes = [0u8; 64];
+    // first 32 bytes: address left-padded into the last 20 bytes
+    bytes[12..32].copy_from_slice(address.as_slice());
+    // second 32 bytes: the full storage slot key
+    bytes[32..64].copy_from_slice(key.as_slice());
+    B256::from_slice(Blake2s256::digest(bytes).as_slice())
+}
+
+fn account_properties_flat_key(address: Address) -> B256 {
+    let mut bytes = [0u8; 32];
+    bytes[12..32].copy_from_slice(&address.as_slice());
+
+    flat_storage_key_for_contract(ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes().into(), bytes.into())
+}
+
 async fn build_genesis(
     genesis_input_source: &dyn GenesisInputSource,
     chain_id: u64,
@@ -138,13 +175,42 @@ async fn build_genesis(
         let bytecode_preimage = set_properties_code(&mut account_properties, &deployed_code);
         let bytecode_hash = account_properties.bytecode_hash;
 
-        let flat_storage_key = {
-            let mut bytes = [0u8; 64];
-            bytes[12..32].copy_from_slice(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes::<20>());
-            bytes[44..64].copy_from_slice(address.as_slice());
+        let flat_storage_key = account_properties_flat_key(address);
 
-            B256::from_slice(Blake2s256::digest(bytes).as_slice())
-        };
+        println!("\n\n\n\n\n===== {:#?} ====", flat_storage_key);
+        println!(
+            "versioning_data: {}",
+            hex::encode(account_properties.versioning_data.into_u64().to_be_bytes())
+        );
+        println!(
+            "nonce: {}",
+            hex::encode(account_properties.nonce.to_be_bytes())
+        );
+        println!(
+            "balance: {}",
+            hex::encode(account_properties.balance.to_be_bytes::<32>())
+        );
+        println!(
+            "bytecode_hash: {}",
+            hex::encode(account_properties.bytecode_hash.as_u8_ref())
+        );
+        println!(
+            "unpadded_code_len: {}",
+            hex::encode(account_properties.unpadded_code_len.to_be_bytes())
+        );
+        println!(
+            "artifacts_len: {}",
+            hex::encode(account_properties.artifacts_len.to_be_bytes())
+        );
+        println!(
+            "observable_bytecode_hash: {}",
+            hex::encode(account_properties.observable_bytecode_hash.as_u8_ref())
+        );
+        println!(
+            "observable_bytecode_len: {}",
+            hex::encode(account_properties.observable_bytecode_len.to_be_bytes())
+        );
+
         let account_properties_hash = account_properties.compute_hash();
         storage_logs.insert(
             flat_storage_key,
@@ -158,12 +224,32 @@ async fn build_genesis(
         ));
     }
 
-    for (key, value) in genesis_input.additional_storage {
+    // 1) Insert RAW additional storage first
+    for (key, value) in genesis_input.additional_storage_raw {
         let duplicate = storage_logs.insert(key, value).is_some();
         if duplicate {
-            panic!("Genesis input contains duplicate storage key: {key:?}");
+            anyhow::bail!("Genesis input contains duplicate storage key in additional_storage_raw: {key:?}");
         }
     }
+
+    // 2) Flatten and insert "pretty" additional storage (address -> key -> value).
+    for (address, slots) in genesis_input.additional_storage {
+        for (slot_key, value_b256) in slots {
+            let flat_key = flat_storage_key_for_contract(address, slot_key);
+
+            let duplicate = storage_logs.insert(flat_key, value_b256).is_some();
+            if duplicate {
+                anyhow::bail!(
+                    "Genesis input contains duplicate flattened storage key derived from address {address:?}, slot {slot_key:?}. \
+                     This likely conflicts with additional_storage_raw."
+                );
+            }
+        }
+    }
+
+    let logs = storage_logs.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+
+    println!("{:#?}", logs);
 
     let header = Header {
         parent_hash: B256::ZERO,

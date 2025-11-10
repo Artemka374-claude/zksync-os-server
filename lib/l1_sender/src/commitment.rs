@@ -130,7 +130,9 @@ impl BatchInfo {
             l2_da_commitment_scheme: pubdata_mode.da_commitment_scheme(),
             da_commitment: da_fields.da_commitment,
             first_block_timestamp: first_block_output.header.timestamp,
+            first_block_number: first_block_output.header.number,
             last_block_timestamp: last_block_output.header.timestamp,
+            last_block_number: last_block_output.header.number,
             chain_id,
             operator_da_input: da_fields.operator_da_input,
         };
