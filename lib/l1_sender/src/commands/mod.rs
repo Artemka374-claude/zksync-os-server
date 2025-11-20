@@ -17,7 +17,7 @@ pub enum L1SenderCommand<Command: SendToL1> {
     Passthrough(Box<SignedBatchEnvelope<FriProof>>),
 }
 
-impl<C> L1SenderCommand<C> {
+impl<C: SendToL1> L1SenderCommand<C> {
     pub fn first_batch_number(&self) -> u64 {
         match self {
             Self::SendToL1(cmd) => cmd.as_ref()[0].batch_number(),

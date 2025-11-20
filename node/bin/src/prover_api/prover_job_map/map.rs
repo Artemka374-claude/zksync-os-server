@@ -315,6 +315,19 @@ impl<T: Clone> ProverJobMap<T> {
         let metadata: Vec<JobMetadata> = completed.iter().map(|e| e.metadata.clone()).collect();
         let stats = JobBatchStats::new(&metadata);
 
+        tracing::info!(
+            ?stats,
+            ?prover_type,
+            prover_id,
+            ?self.prover_stage,
+            queue_statistics = ?self.compute_and_record_statistics(&jobs),
+            "Job completed",
+        );
+
+        drop(jobs);
+        // Notify once for all completed jobs
+        self.space_available.notify_waiters();
+
         // Record Prometheus metrics
         match &stats.job_with_max_attempts_info {
             // only writing metrics for normal case - the last assigned prover reported result
@@ -347,19 +360,6 @@ impl<T: Clone> ProverJobMap<T> {
                 )
             }
         }
-
-        tracing::info!(
-            ?stats,
-            ?prover_type,
-            prover_id,
-            ?self.prover_stage,
-            queue_statistics = ?self.compute_and_record_statistics(&jobs),
-            "Job completed",
-        );
-
-        drop(jobs);
-        // Notify once for all completed jobs
-        self.space_available.notify_waiters();
 
         Some(completed.into_iter().map(|e| e.batch_envelope).collect())
     }
