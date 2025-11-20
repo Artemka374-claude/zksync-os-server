@@ -32,8 +32,7 @@ impl<'a, T> TrackedLockGuard<'a, T> {
 impl<'a, T> Drop for TrackedLockGuard<'a, T> {
     fn drop(&mut self) {
         let hold_time = self.acquired_at.elapsed();
-        PROVER_METRICS.job_map_lock_hold_time[&(self.prover_stage, self.method)]
-            .observe(hold_time);
+        PROVER_METRICS.job_map_lock_hold_time[&(self.prover_stage, self.method)].observe(hold_time);
     }
 }
 

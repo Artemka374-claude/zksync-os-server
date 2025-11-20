@@ -111,10 +111,7 @@ impl JobBatchStats {
             Some(PreviousAttemptsInfo {
                 attempts: job_with_max_attempts.current_attempt,
                 time_since_last_assignment: job_with_max_attempts.assigned_at.unwrap().elapsed(),
-                last_assigned_to: job_with_max_attempts
-                    .assigned_to_prover_id
-                    .clone()
-                    .unwrap(),
+                last_assigned_to: job_with_max_attempts.assigned_to_prover_id.clone().unwrap(),
             })
         } else {
             None
