@@ -38,6 +38,7 @@ pub struct BlockContextProvider<Mempool> {
     l2_mempool: Mempool,
     block_hashes_for_next_block: BlockHashes,
     previous_block_timestamp: u64,
+    previous_block_pubdata_price: Option<U256>,
     chain_id: u64,
     gas_limit: u64,
     pubdata_limit: u64,
@@ -85,6 +86,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             l2_mempool,
             block_hashes_for_next_block,
             previous_block_timestamp,
+            previous_block_pubdata_price: None,
             chain_id,
             gas_limit,
             pubdata_limit,
@@ -165,6 +167,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     self.native_price_override,
                     self.pubdata_price_override,
                     self.pubdata_mode,
+                    self.previous_block_pubdata_price,
                     &self.pubdata_price_provider,
                     &self.blob_fill_ratio_provider,
                 );
@@ -373,6 +376,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                 .unwrap(),
         );
         self.previous_block_timestamp = block_output.header.timestamp;
+        self.previous_block_pubdata_price = Some(replay_record.block_context.pubdata_price);
 
         // TODO: confirm whether constructing a real block is absolutely necessary here;
         //       so far it looks like below is sufficient
@@ -412,6 +416,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         native_price_override: Option<U256>,
         pubdata_price_override: Option<U256>,
         pubdata_mode: PubdataMode,
+        previous_block_pubdata_price: Option<U256>,
         pubdata_price_provider: &watch::Receiver<Option<u128>>,
         blob_fill_ratio_provider: &watch::Receiver<Option<Ratio<u64>>>,
     ) -> FeeParams {
@@ -423,7 +428,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
 
         let native_price = native_price_override.unwrap_or(U256::from(NATIVE_PRICE));
 
-        let pubdata_price = match pubdata_mode {
+        let desired_pubdata_price = match pubdata_mode {
             PubdataMode::Blobs => {
                 if let Some(pubdata_price_override) = pubdata_price_override {
                     pubdata_price_override
@@ -462,6 +467,13 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     .borrow()
                     .expect("Pubdata price must be available"),
             )),
+        };
+
+        // Limit pubdata price increase to 1.5x per block.
+        let pubdata_price = if let Some(prev_pubdata_price) = previous_block_pubdata_price && !prev_pubdata_price.is_zero() {
+            desired_pubdata_price.min(prev_pubdata_price * U256::from(3) / U256::from(2))
+        } else {
+            desired_pubdata_price
         };
 
         FeeParams {
