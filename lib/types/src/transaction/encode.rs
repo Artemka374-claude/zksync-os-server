@@ -34,6 +34,7 @@ impl ZksyncOsEncode for ZkTransaction {
     fn encode(self) -> EncodedTx {
         let (envelope, signer) = self.into_parts();
         match envelope {
+            ZkEnvelope::InteropRoots(interop_envelope) => interop_envelope.encode(),
             ZkEnvelope::L1(l1_envelope) => l1_envelope.encode(),
             ZkEnvelope::Upgrade(upgrade_envelope) => upgrade_envelope.encode(),
             ZkEnvelope::L2(l2_envelope) => {
@@ -183,6 +184,7 @@ impl From<ZkTransaction> for TransactionData {
     fn from(value: ZkTransaction) -> Self {
         let (envelope, signer) = value.into_parts();
         match envelope {
+            ZkEnvelope::InteropRoots(interop_envelope) => interop_envelope.into(),
             ZkEnvelope::L1(l1_envelope) => l1_envelope.into(),
             ZkEnvelope::Upgrade(upgrade_envelope) => upgrade_envelope.into(),
             ZkEnvelope::L2(l2_envelope) => L2Transaction::new_unchecked(l2_envelope, signer).into(),
