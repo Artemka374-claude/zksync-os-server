@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc;
 use zksync_os_types::{
-    InteropRootsTransaction, L1PriorityEnvelope, L2Envelope, UpgradeTransaction, ZkTransaction,
+    InteropRootsEnvelope, L1PriorityEnvelope, L2Envelope, UpgradeTransaction, ZkTransaction,
 };
 
 pub trait TxStream: Stream {
@@ -21,7 +21,7 @@ pub trait TxStream: Stream {
 pub struct BestTransactionsStream<'a> {
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
-    interop_transactions: &'a mut mpsc::Receiver<InteropRootsTransaction>,
+    interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
     pending_transactions_listener: mpsc::Receiver<TxHash>,
     best_l2_transactions:
         Box<dyn BestTransactions<Item = Arc<ValidPoolTransaction<L2PooledTransaction>>>>,
@@ -35,7 +35,7 @@ pub struct BestTransactionsStream<'a> {
 pub fn best_transactions<'a>(
     l2_mempool: &impl L2TransactionPool,
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
-    interop_transactions: &'a mut mpsc::Receiver<InteropRootsTransaction>,
+    interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
 ) -> BestTransactionsStream<'a> {
     let pending_transactions_listener =
@@ -80,8 +80,9 @@ impl Stream for BestTransactionsStream<'_> {
                 }
             }
 
+            // todo: ensure this is correct ordering of transactions
             match this.interop_transactions.poll_recv(cx) {
-                Poll::Ready(Some(_)) => todo!("handle interop txs"),
+                Poll::Ready(Some(tx)) => return Poll::Ready(Some(ZkTransaction::from(tx))),
                 Poll::Pending => {}
                 Poll::Ready(None) => todo!("channel closed"),
             }

@@ -192,21 +192,21 @@ impl<T: SystemTxType> From<SystemTransactionEnvelope<T>> for TransactionData {
         let system_tx = system_tx.inner;
         TransactionData {
             tx_type: U256::from(T::TX_TYPE),
-            from: todo!(),
+            from: system_tx.initiator,
             to: system_tx.destination,
             gas_limit: U256::from(system_tx.gas_limit),
-            pubdata_price_limit: todo!(),
-            max_fee_per_gas: todo!(),
-            max_priority_fee_per_gas: todo!(),
-            paymaster: todo!(),
+            pubdata_price_limit: U256::from(0),
+            max_fee_per_gas: U256::from(system_tx.max_fee_per_gas()),
+            max_priority_fee_per_gas: U256::from(system_tx.max_priority_fee_per_gas().unwrap_or(0)),
+            paymaster: Address::ZERO,
             nonce: U256::from(system_tx.nonce),
-            value: todo!(),
-            reserved: todo!(),
+            value: U256::ZERO,
+            reserved: [U256::ZERO, U256::ZERO, U256::ZERO, U256::ZERO],
             data: system_tx.data.to_vec(),
-            signature: todo!(),
-            factory_deps: todo!(),
-            paymaster_input: todo!(),
-            reserved_dynamic: todo!(),
+            signature: vec![],
+            factory_deps: vec![],
+            paymaster_input: vec![],
+            reserved_dynamic: vec![],
         }
     }
 }

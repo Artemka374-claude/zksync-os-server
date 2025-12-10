@@ -1,11 +1,11 @@
 use crate::transaction::system::envelope::SystemTransactionEnvelope;
-use crate::transaction::system::tx::SystemTransaction;
+// use crate::transaction::system::tx::SystemTransaction;
 use serde::{Deserialize, Serialize};
 
 pub mod envelope;
 pub mod tx;
 
-pub type InteropRootsTransaction = SystemTransaction<InteropRootsTxType>;
+// pub type InteropRootsTransaction = SystemTransaction<InteropRootsTxType>;
 pub type InteropRootsEnvelope = SystemTransactionEnvelope<InteropRootsTxType>;
 
 pub trait SystemTxType: Clone + Send + Sync + std::fmt::Debug + 'static {
