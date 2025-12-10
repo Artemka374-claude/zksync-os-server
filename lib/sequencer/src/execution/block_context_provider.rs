@@ -16,8 +16,8 @@ use zksync_os_mempool::{
 };
 use zksync_os_storage_api::ReplayRecord;
 use zksync_os_types::{
-    ExecutionVersion, L1PriorityEnvelope, L2Envelope, ProtocolSemanticVersion, PubdataMode,
-    UpgradeTransaction, ZkEnvelope,
+    ExecutionVersion, InteropRootsTransaction, L1PriorityEnvelope, L2Envelope,
+    ProtocolSemanticVersion, PubdataMode, UpgradeTransaction, ZkEnvelope,
 };
 
 /// Component that turns `BlockCommand`s into `PreparedBlockCommand`s.
@@ -34,6 +34,7 @@ pub struct BlockContextProvider<Mempool> {
     next_l1_priority_id: u64,
     l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
     upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
+    interop_transactions: mpsc::Receiver<InteropRootsTransaction>,
     l2_mempool: Mempool,
     block_hashes_for_next_block: BlockHashes,
     previous_block_timestamp: u64,
@@ -59,6 +60,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         next_l1_priority_id: u64,
         l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
         upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
+        interop_transactions: mpsc::Receiver<InteropRootsTransaction>,
         l2_mempool: Mempool,
         block_hashes_for_next_block: BlockHashes,
         previous_block_timestamp: u64,
@@ -79,6 +81,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             next_l1_priority_id,
             l1_transactions,
             upgrade_transactions,
+            interop_transactions,
             l2_mempool,
             block_hashes_for_next_block,
             previous_block_timestamp,
@@ -109,6 +112,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                 let mut best_txs = best_transactions(
                     &self.l2_mempool,
                     &mut self.l1_transactions,
+                    &mut self.interop_transactions,
                     &mut self.upgrade_transactions,
                 );
 
