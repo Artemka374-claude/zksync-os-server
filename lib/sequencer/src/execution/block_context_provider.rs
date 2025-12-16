@@ -242,7 +242,9 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     native_price: rebuild.replay_record.block_context.native_price,
                     pubdata_price: rebuild.replay_record.block_context.pubdata_price,
                     block_number,
-                    timestamp: rebuild.replay_record.block_context.timestamp,
+                    // Since we are rebuilding the block we stamp it with a fresh timestamp.
+                    // This allows us to rebuild and commit potentially old blocks.
+                    timestamp: (millis_since_epoch() / 1000) as u64,
                     blob_fee: rebuild.replay_record.block_context.blob_fee,
                     chain_id: self.chain_id,
                     coinbase: self.fee_collector_address,
