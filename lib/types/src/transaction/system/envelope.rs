@@ -3,7 +3,7 @@ use alloy::consensus::{Transaction, Typed2718};
 use alloy::eips::eip2718::{Eip2718Error, Eip2718Result};
 use alloy::eips::{Decodable2718, Encodable2718};
 use alloy::primitives::ChainId;
-use alloy::primitives::{B256, Bytes, TxHash, TxKind, U256};
+use alloy::primitives::{B256, Bytes, TxKind, U256};
 use alloy::rpc::types::{AccessList, SignedAuthorization};
 use alloy::signers::Signature;
 use alloy_rlp::{BufMut, Encodable};
@@ -36,10 +36,6 @@ impl<T: SystemTxType> RlpEcdsaEncodableTx for SystemTransactionEnvelope<T> {
 
     fn rlp_encode_fields(&self, out: &mut dyn BufMut) {
         self.inner.rlp_encode_fields(out);
-    }
-
-    fn tx_hash_with_type(&self, _signature: &Signature, _ty: u8) -> TxHash {
-        todo!("not implemented")
     }
 }
 

@@ -56,7 +56,7 @@ impl BatchInfo {
             for tx in transactions {
                 match tx.envelope() {
                     ZkEnvelope::InteropRoots(_) => {
-                        unimplemented!("handle interop txs");
+                        unimplemented!("maybe we should handle interop txs here?");
                     }
                     ZkEnvelope::L1(l1_tx) => {
                         let onchain_data_hash = l1_tx.hash();

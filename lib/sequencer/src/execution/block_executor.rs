@@ -153,10 +153,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
                             }
                             Err(e) => {
                                 match (tx.tx_type(), command.invalid_tx_policy) {
-                                    (ZkTxType::InteropRoots, _) => {
-                                        unimplemented!("handle interop txs");
-                                    }
-                                    (ZkTxType::L1 | ZkTxType::Upgrade, _) => {
+                                    (ZkTxType::L1 | ZkTxType::Upgrade | ZkTxType::InteropRoots, _) => {
                                         return Err(
                                             BlockDump {
                                                 ctx,

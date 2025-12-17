@@ -333,8 +333,16 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         let mut l2_transactions = Vec::new();
         for tx in &replay_record.transactions {
             match tx.envelope() {
-                ZkEnvelope::InteropRoots(_interop_tx) => {
-                    unimplemented!("handle interop txs");
+                ZkEnvelope::InteropRoots(interop_tx) => {
+                    if matches!(
+                        cmd_type,
+                        BlockCommandType::Rebuild | BlockCommandType::Replay
+                    ) {
+                        assert_eq!(
+                            &self.interop_transactions.recv().await.unwrap().tx,
+                            interop_tx
+                        );
+                    }
                 }
                 ZkEnvelope::L1(l1_tx) => {
                     self.next_l1_priority_id = l1_tx.priority_id() + 1;
