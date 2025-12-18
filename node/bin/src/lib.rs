@@ -120,7 +120,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     }
     tracing::info!(version = %node_version, role, "Initializing Node");
 
-    let (bridgehub_address, chain_id, genesis_input_source) =
+    let (bridgehub_address, bytecode_supplier_address, chain_id, genesis_input_source) =
         if config.sequencer_config.is_main_node() {
             let genesis_input_source: Arc<dyn GenesisInputSource> =
                 Arc::new(FileGenesisInputSource::new(
@@ -135,6 +135,10 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
                     .genesis_config
                     .bridgehub_address
                     .expect("Missing `bridgehub_address`"),
+                config
+                    .genesis_config
+                    .bytecode_supplier_address
+                    .expect("Missing `bytecode_supplier_address`"),
                 config.genesis_config.chain_id.expect("Missing `chain_id`"),
                 genesis_input_source,
             )
@@ -445,7 +449,8 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         run_jsonrpsee_server(
             config.rpc_config.clone().into(),
             chain_id,
-            node_startup_state.l1_state.bridgehub_address(),
+            bridgehub_address,
+            bytecode_supplier_address,
             rpc_storage,
             l2_mempool.clone(),
             genesis_input_source,
@@ -521,7 +526,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         L1UpgradeTxWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
             node_startup_state.l1_state.diamond_proxy.clone(),
-            config.genesis_config.bytecode_supplier_address,
+            bytecode_supplier_address,
             current_protocol_version,
             l1_upgrade_transactions_sender,
         )
@@ -593,6 +598,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             finality_storage,
             stop_receiver.clone(),
             tx_acceptance_state_sender,
+            chain_id,
         )
         .await;
     };
@@ -787,6 +793,7 @@ async fn run_en_pipeline(
     finality: impl ReadFinality + Clone,
     stop_receiver: watch::Receiver<bool>,
     tx_acceptance_state_sender: watch::Sender<TransactionAcceptanceState>,
+    chain_id: u64,
 ) {
     let internal_config_path = config
         .general_config
@@ -834,7 +841,7 @@ async fn run_en_pipeline(
             BatchVerificationClient::new(
                 finality.clone(),
                 config.batch_verification_config.signing_key.clone(),
-                config.genesis_config.chain_id.unwrap(),
+                chain_id,
                 *node_state_on_startup.l1_state.diamond_proxy.address(),
                 config.batch_verification_config.connect_address,
             ),
