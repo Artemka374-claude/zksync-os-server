@@ -10,9 +10,10 @@ use crate::transaction::SystemTxType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct SystemTransaction<T: SystemTxType> {
+    #[serde(rename = "gas", with = "alloy::serde::quantity")]
     pub gas_limit: u64,
-    pub destination: Address,
-    pub data: Bytes,
+    pub to: Address,
+    pub input: Bytes,
 
     #[serde(skip)]
     pub marker: std::marker::PhantomData<T>,
@@ -66,7 +67,6 @@ impl<T: SystemTxType> Transaction for SystemTransaction<T> {
     }
 
     fn effective_gas_price(&self, _base_fee: Option<u64>) -> u128 {
-        // At the moment `max_fee_per_gas` is the effective gas price for L1 txs.
         0
     }
 
@@ -75,8 +75,7 @@ impl<T: SystemTxType> Transaction for SystemTransaction<T> {
     }
 
     fn kind(&self) -> TxKind {
-        // todo: check if this is correct
-        TxKind::Call(self.destination)
+        TxKind::Call(self.to)
     }
 
     fn is_create(&self) -> bool {
@@ -89,7 +88,7 @@ impl<T: SystemTxType> Transaction for SystemTransaction<T> {
     }
 
     fn input(&self) -> &Bytes {
-        &self.data
+        &self.input
     }
 
     fn access_list(&self) -> Option<&AccessList> {
@@ -113,13 +112,13 @@ impl<T: SystemTxType> Typed2718 for SystemTransaction<T> {
 
 impl<T: SystemTxType> RlpEcdsaEncodableTx for SystemTransaction<T> {
     fn rlp_encoded_fields_length(&self) -> usize {
-        self.gas_limit.length() + self.destination.length() + self.data.length()
+        self.gas_limit.length() + self.to.length() + self.input.length()
     }
 
     fn rlp_encode_fields(&self, out: &mut dyn BufMut) {
         self.gas_limit.encode(out);
-        self.destination.encode(out);
-        self.data.encode(out);
+        self.to.encode(out);
+        self.input.encode(out);
     }
 }
 
@@ -129,8 +128,8 @@ impl<T: SystemTxType> RlpEcdsaDecodableTx for SystemTransaction<T> {
     fn rlp_decode_fields(buf: &mut &[u8]) -> alloy::rlp::Result<Self> {
         Ok(Self {
             gas_limit: Decodable::decode(buf)?,
-            destination: Decodable::decode(buf)?,
-            data: Decodable::decode(buf)?,
+            to: Decodable::decode(buf)?,
+            input: Decodable::decode(buf)?,
 
             marker: std::marker::PhantomData,
         })
@@ -141,8 +140,8 @@ impl<T: SystemTxType> Encodable for SystemTransaction<T> {
     fn encode(&self, out: &mut dyn BufMut) {
         let fields = vec![
             ServiceTxField::U64(self.gas_limit),
-            ServiceTxField::Bytes(self.destination.as_slice()),
-            ServiceTxField::Bytes(self.data.as_ref()),
+            ServiceTxField::Bytes(self.to.as_slice()),
+            ServiceTxField::Bytes(self.input.as_ref()),
         ];
 
         fields.encode(out);

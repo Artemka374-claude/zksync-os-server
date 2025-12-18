@@ -151,9 +151,11 @@ impl ZkTransaction {
 
 impl From<InteropRootsEnvelope> for ZkTransaction {
     fn from(value: InteropRootsEnvelope) -> Self {
-        let signer = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
         Self {
-            inner: Recovered::new_unchecked(ZkEnvelope::InteropRoots(value), signer),
+            inner: Recovered::new_unchecked(
+                ZkEnvelope::InteropRoots(value),
+                BOOTLOADER_FORMAL_ADDRESS,
+            ),
         }
     }
 }

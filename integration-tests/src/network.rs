@@ -162,7 +162,6 @@ impl TransactionBuilder<Zksync> for ZkTransactionRequest {
 
     fn complete_type(&self, ty: <Zksync as Network>::TxType) -> Result<(), Vec<&'static str>> {
         match ty {
-            // todo: should it be implemented for interop roots?
             ZkTxType::L1 | ZkTxType::Upgrade | ZkTxType::InteropRoots => {
                 unimplemented!()
             }
