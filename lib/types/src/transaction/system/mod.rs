@@ -1,4 +1,4 @@
-use crate::{ZkTransaction, transaction::system::envelope::SystemTransactionEnvelope};
+use crate::transaction::system::envelope::SystemTransactionEnvelope;
 use alloy::primitives::{Address, address};
 use serde::{Deserialize, Serialize};
 
@@ -19,16 +19,4 @@ pub struct InteropRootsTxType;
 
 impl SystemTxType for InteropRootsTxType {
     const TX_TYPE: u8 = 0x7d;
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct InteropRootsTransaction {
-    pub interop_roots_amount: u64,
-    pub tx: InteropRootsEnvelope,
-}
-
-impl From<InteropRootsTransaction> for ZkTransaction {
-    fn from(value: InteropRootsTransaction) -> Self {
-        ZkTransaction::from(value.tx)
-    }
 }
