@@ -27,3 +27,6 @@ mod traits;
 pub(crate) use traits::{ProcessL1Event, ProcessRawEvents};
 
 mod factory_deps;
+
+mod interop_roots_watcher;
+pub use interop_roots_watcher::L1InteropRootsWatcher;
