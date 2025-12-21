@@ -84,11 +84,9 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
                 break SealReason::Timeout;                                     // leave the loop ⇒ seal
             }
 
-
             /* -------- stream branch ------------------------------- */
             maybe_tx = command.tx_source.next() => {
                 latency_tracker.enter_state(SequencerState::Execution);
-
                 match maybe_tx {
                     /* ----- got a transaction with gas limit within the block gas limit left --- */
                     Some(tx) if cumulative_gas_used + tx.inner.gas_limit() <= ctx.gas_limit => {
