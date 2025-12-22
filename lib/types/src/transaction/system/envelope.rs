@@ -2,8 +2,8 @@ use alloy::consensus::transaction::{RlpEcdsaDecodableTx, RlpEcdsaEncodableTx};
 use alloy::consensus::{Transaction, Typed2718};
 use alloy::eips::eip2718::{Eip2718Error, Eip2718Result};
 use alloy::eips::{Decodable2718, Encodable2718};
+use alloy::primitives::ChainId;
 use alloy::primitives::{B256, Bytes, TxKind, U256};
-use alloy::primitives::{ChainId, keccak256};
 use alloy::rpc::types::{AccessList, SignedAuthorization};
 use alloy_rlp::{BufMut, Encodable};
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use crate::transaction::system::tx::SystemTransaction;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct SystemTransactionEnvelope<T: SystemTxType> {
+    // hash is calculated separately to be able to pass it as a reference later on
     pub hash: B256,
     pub inner: SystemTransaction<T>,
 }
@@ -45,8 +46,8 @@ impl<T: SystemTxType> RlpEcdsaDecodableTx for SystemTransactionEnvelope<T> {
     fn rlp_decode_fields(buf: &mut &[u8]) -> alloy::rlp::Result<Self> {
         let transaction = SystemTransaction::<T>::rlp_decode_fields(buf)?;
         Ok(Self {
-            hash: keccak256(&transaction.encoded_2718()),
-            inner: SystemTransaction::rlp_decode_fields(buf)?,
+            hash: transaction.calculate_hash(),
+            inner: transaction,
         })
     }
 }
