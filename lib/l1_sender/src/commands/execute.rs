@@ -1,7 +1,7 @@
 use crate::batcher_metrics::BatchExecutionStage;
 use crate::batcher_model::{FriProof, SignedBatchEnvelope};
 use crate::commands::SendToL1;
-use alloy::primitives::U256;
+use alloy::primitives::{FixedBytes, U256};
 use alloy::sol_types::{SolCall, SolValue};
 use std::fmt::Display;
 use zksync_os_contract_interface::models::PriorityOpsBatchInfo;
@@ -95,7 +95,12 @@ impl ExecuteCommand {
             .collect::<Vec<_>>();
         // For now interop roots are empty.
         let interop_roots: Vec<Vec<InteropRoot>> = vec![vec![]; self.batches.len()];
-        let encoded_data = (stored_batch_infos, priority_ops, interop_roots).abi_encode_params();
+        // For now, these are not validated, so they can be empty.
+        // IMPORTANT: the struct is not correct, it only works while the array is empty
+        let lops: Vec<u8> = Default::default();
+        let messages: Vec<Vec<u8>> = Default::default();
+        let message_roots: Vec<FixedBytes<32>> = Default::default();
+        let encoded_data = (stored_batch_infos, priority_ops, interop_roots, lops, messages, message_roots).abi_encode_params();
 
         /// Current commitment encoding version as per protocol.
         const SUPPORTED_ENCODING_VERSION: u8 = 1;
