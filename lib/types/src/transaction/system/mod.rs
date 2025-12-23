@@ -4,7 +4,7 @@ use crate::transaction::{system::envelope::SystemTransactionEnvelope, tx::System
 use alloy::primitives::{Address, Bytes, address};
 use alloy::sol_types::SolCall;
 use serde::{Deserialize, Serialize};
-use zksync_os_contract_interface::{InteropRoot, addInteropRootsInBatchCall};
+use zksync_os_contract_interface::{IMessageRoot::addInteropRootsInBatchCall, InteropRoot};
 
 pub mod envelope;
 pub mod tx;

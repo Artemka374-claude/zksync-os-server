@@ -7,7 +7,8 @@ use alloy::{
     providers::{DynProvider, Provider},
 };
 use tokio::sync::mpsc;
-use zksync_os_contract_interface::{Bridgehub, InteropRoot, NewInteropRoot};
+use zksync_os_contract_interface::IMessageRoot::AppendedChainRoot;
+use zksync_os_contract_interface::{Bridgehub, InteropRoot};
 use zksync_os_types::InteropRootsEnvelope;
 
 pub const INTEROP_ROOTS_PER_IMPORT: u64 = 100;
@@ -64,7 +65,7 @@ impl L1InteropRootsWatcher {
             .from_block(from_block)
             .to_block(to_block)
             .address(self.contract_address)
-            .event_signature(NewInteropRoot::SIGNATURE_HASH);
+            .event_signature(AppendedChainRoot::SIGNATURE_HASH);
         let logs = self.provider.get_logs(&filter).await?;
 
         let mut interop_roots = Vec::new();
@@ -75,16 +76,12 @@ impl L1InteropRootsWatcher {
             if log_block_number == from_block && log_index_in_block <= start_log_index {
                 continue;
             }
-            let interop_root_event = NewInteropRoot::decode_log(&log.inner)?.data;
-
-            if interop_root_event.sides.len() != 1 {
-                anyhow::bail!("Expected 1 side, got {}", interop_root_event.sides.len());
-            }
+            let interop_root_event = AppendedChainRoot::decode_log(&log.inner)?.data;
 
             let interop_root = InteropRoot {
                 chainId: interop_root_event.chainId,
-                blockOrBatchNumber: interop_root_event.blockNumber,
-                sides: interop_root_event.sides,
+                blockOrBatchNumber: interop_root_event.batchNumber,
+                sides: vec![interop_root_event.chainRoot],
             };
             interop_roots.push(interop_root);
 
