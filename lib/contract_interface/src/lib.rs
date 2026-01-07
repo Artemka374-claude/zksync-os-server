@@ -52,12 +52,7 @@ alloy::sol! {
             bytes32[] sides
         );
 
-        // Temporary event
-        event AppendedChainRoot(uint256 indexed chainId, uint256 indexed batchNumber, bytes32 indexed chainRoot);
-
         function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
-
-        function addChainBatchRoot(uint256 chainId, uint256 batchNumber, bytes32 messageRoot) external;
     }
 
     // `ZKChainStorage.sol`

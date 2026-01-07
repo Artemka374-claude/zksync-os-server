@@ -42,7 +42,7 @@ use crate::replay_transport::replay_server;
 use crate::state_initializer::StateInitializer;
 use crate::tree_manager::TreeManager;
 use alloy::network::{Ethereum, EthereumWallet};
-use alloy::primitives::{BlockNumber, address};
+use alloy::primitives::BlockNumber;
 use alloy::providers::fillers::{FillProvider, TxFiller};
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider};
 use anyhow::{Context, Result};
@@ -51,7 +51,7 @@ use jsonrpsee::http_client::HttpClient;
 use ruint::aliases::U256;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use zksync_os_batch_verification::{BatchVerificationClient, BatchVerificationPipelineStep};
@@ -543,9 +543,10 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         // todo: pass the real values here
         L1InteropRootsWatcher::new(
             node_startup_state.l1_state.bridgehub.clone(),
-            Duration::from_secs(5),
             interop_transactions_sender,
         )
+        .await
+        .expect("failed to start Interop roots watcher")
         .run()
         .map(report_exit("Interop roots watcher")),
     );

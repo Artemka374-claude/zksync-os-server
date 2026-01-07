@@ -7,7 +7,7 @@ use alloy::{
     providers::{DynProvider, Provider},
 };
 use tokio::sync::mpsc;
-use zksync_os_contract_interface::IMessageRoot::AppendedChainRoot;
+use zksync_os_contract_interface::IMessageRoot::NewInteropRoot;
 use zksync_os_contract_interface::{Bridgehub, InteropRoot};
 use zksync_os_types::InteropRootsEnvelope;
 
@@ -16,20 +16,15 @@ const LOOKBEHIND_BLOCKS: u64 = 1000;
 
 pub struct L1InteropRootsWatcher {
     contract_address: Address,
-
     provider: DynProvider,
     // first number is block number, second is log index
     next_log_to_scan_from: Option<(u64, u64)>,
-
-    poll_interval: Duration,
-
     output: mpsc::Sender<InteropRootsEnvelope>,
 }
 
 impl L1InteropRootsWatcher {
     pub async fn new(
         bridgehub: Bridgehub<DynProvider>,
-        poll_interval: Duration,
         output: mpsc::Sender<InteropRootsEnvelope>,
     ) -> anyhow::Result<Self> {
         let provider = bridgehub.provider().clone();
@@ -42,13 +37,12 @@ impl L1InteropRootsWatcher {
             provider,
             contract_address,
             next_log_to_scan_from: None,
-            poll_interval,
             output,
         })
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
-        let mut timer = tokio::time::interval(self.poll_interval);
+        let mut timer = tokio::time::interval(Duration::from_secs(5));
         loop {
             timer.tick().await;
             self.poll().await?;
@@ -65,7 +59,7 @@ impl L1InteropRootsWatcher {
             .from_block(from_block)
             .to_block(to_block)
             .address(self.contract_address)
-            .event_signature(AppendedChainRoot::SIGNATURE_HASH);
+            .event_signature(NewInteropRoot::SIGNATURE_HASH);
         let logs = self.provider.get_logs(&filter).await?;
 
         let mut interop_roots = Vec::new();
@@ -73,15 +67,21 @@ impl L1InteropRootsWatcher {
             let log_block_number = log.block_number.unwrap();
             let log_index_in_block = log.log_index.unwrap();
 
-            if log_block_number == from_block && log_index_in_block <= start_log_index {
+            if log_block_number == from_block && log_index_in_block < start_log_index {
                 continue;
             }
-            let interop_root_event = AppendedChainRoot::decode_log(&log.inner)?.data;
+            let interop_root_event = NewInteropRoot::decode_log(&log.inner)?.data;
+
+            anyhow::ensure!(
+                interop_root_event.sides.len() == 1,
+                "Expected exactly one side for interop root, found {}",
+                interop_root_event.sides.len()
+            );
 
             let interop_root = InteropRoot {
                 chainId: interop_root_event.chainId,
-                blockOrBatchNumber: interop_root_event.batchNumber,
-                sides: vec![interop_root_event.chainRoot],
+                blockOrBatchNumber: interop_root_event.blockNumber,
+                sides: interop_root_event.sides,
             };
             interop_roots.push(interop_root);
 
@@ -126,9 +126,11 @@ impl L1InteropRootsWatcher {
             .fetch_events(from_block, latest_block, start_log_index)
             .await?;
 
-        let interop_roots_envelope = InteropRootsEnvelope::from_interop_roots(interop_roots);
-
-        self.output.send(interop_roots_envelope).await?;
+        if !interop_roots.is_empty() {
+            self.output
+                .send(InteropRootsEnvelope::from_interop_roots(interop_roots))
+                .await?;
+        }
 
         Ok(())
     }
