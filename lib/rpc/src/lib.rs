@@ -16,6 +16,7 @@ mod result;
 mod rpc_storage;
 pub use rpc_storage::{ReadRpcStorage, RpcStorage};
 mod debug_impl;
+pub mod js_tracer;
 mod monitoring_middleware;
 mod net_impl;
 mod sandbox;
@@ -60,11 +61,12 @@ pub async fn run_jsonrpsee_server<RpcStorage: ReadRpcStorage, Mempool: L2Transac
     config: RpcConfig,
     chain_id: u64,
     bridgehub_address: Address,
+    bytecode_supplier_address: Address,
     storage: RpcStorage,
     mempool: Mempool,
     genesis_input_source: Arc<dyn GenesisInputSource>,
     acceptance_state: watch::Receiver<TransactionAcceptanceState>,
-    pending_block_context: watch::Receiver<Option<BlockContext>>,
+    last_constructed_block_context: watch::Receiver<Option<BlockContext>>,
     tx_forwarder: Option<DynProvider>,
 ) -> anyhow::Result<()> {
     tracing::info!("Starting JSON-RPC server at {}", config.address);
@@ -74,7 +76,7 @@ pub async fn run_jsonrpsee_server<RpcStorage: ReadRpcStorage, Mempool: L2Transac
         config.clone(),
         storage.clone(),
         chain_id,
-        pending_block_context,
+        last_constructed_block_context,
     );
     rpc.merge(
         EthNamespace::new(
@@ -93,7 +95,13 @@ pub async fn run_jsonrpsee_server<RpcStorage: ReadRpcStorage, Mempool: L2Transac
     )?;
     rpc.merge(EthPubsubNamespace::new(storage.clone(), mempool).into_rpc())?;
     rpc.merge(
-        ZksNamespace::new(bridgehub_address, storage.clone(), genesis_input_source).into_rpc(),
+        ZksNamespace::new(
+            bridgehub_address,
+            bytecode_supplier_address,
+            storage.clone(),
+            genesis_input_source,
+        )
+        .into_rpc(),
     )?;
     rpc.merge(OtsNamespace::new(storage.clone()).into_rpc())?;
     rpc.merge(DebugNamespace::new(storage.clone(), eth_call_handler).into_rpc())?;

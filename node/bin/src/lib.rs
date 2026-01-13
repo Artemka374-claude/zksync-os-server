@@ -8,7 +8,6 @@ pub mod config;
 pub mod config_constants;
 mod en_remote_config;
 mod l1_provider;
-pub mod metadata;
 mod node_state_on_startup;
 mod priority_tree_steps;
 pub mod prover_api;
@@ -24,7 +23,6 @@ use crate::command_source::{ExternalNodeCommandSource, MainNodeCommandSource};
 use crate::config::{Config, ProverApiConfig, gas_adjuster_config};
 use crate::en_remote_config::load_remote_config;
 use crate::l1_provider::build_node_l1_provider;
-use crate::metadata::NODE_VERSION;
 use crate::node_state_on_startup::NodeStateOnStartup;
 use crate::priority_tree_steps::priority_tree_en_step::PriorityTreeENStep;
 use crate::priority_tree_steps::priority_tree_pipeline_step::PriorityTreePipelineStep;
@@ -41,6 +39,7 @@ use crate::prover_input_generator::ProverInputGenerator;
 use crate::replay_transport::replay_server;
 use crate::state_initializer::StateInitializer;
 use crate::tree_manager::TreeManager;
+use alloy::consensus::BlobTransactionSidecar;
 use alloy::network::{Ethereum, EthereumWallet};
 use alloy::primitives::BlockNumber;
 use alloy::providers::fillers::{FillProvider, TxFiller};
@@ -72,6 +71,7 @@ use zksync_os_l1_watcher::{
 };
 use zksync_os_mempool::L2TransactionPool;
 use zksync_os_merkle_tree::{MerkleTree, RocksDBWrapper};
+use zksync_os_metadata::NODE_VERSION;
 use zksync_os_object_store::ObjectStoreFactory;
 use zksync_os_observability::GENERAL_METRICS;
 use zksync_os_pipeline::Pipeline;
@@ -101,12 +101,16 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     stop_receiver: watch::Receiver<bool>,
     config: Config,
 ) {
-    let node_version: semver::Version = NODE_VERSION.parse().unwrap();
     let role: &'static str = if config.sequencer_config.is_main_node() {
         "main_node"
     } else {
         "external_node"
     };
+
+    // Priority tree is required for main node
+    if config.sequencer_config.is_main_node() && !config.general_config.run_priority_tree {
+        panic!("`general_run_priority_tree` must be true for Main Node");
+    }
 
     let process_started_at = Instant::now();
     GENERAL_METRICS.process_started_at[&(NODE_VERSION, role)].set(
@@ -118,9 +122,9 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     if !config.l1_sender_config.enabled {
         unimplemented!("running without L1 Senders is temporarily not supported");
     }
-    tracing::info!(version = %node_version, role, "Initializing Node");
+    tracing::info!(version = NODE_VERSION, role, "Initializing Node");
 
-    let (bridgehub_address, chain_id, genesis_input_source) =
+    let (bridgehub_address, bytecode_supplier_address, chain_id, genesis_input_source) =
         if config.sequencer_config.is_main_node() {
             let genesis_input_source: Arc<dyn GenesisInputSource> =
                 Arc::new(FileGenesisInputSource::new(
@@ -135,6 +139,10 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
                     .genesis_config
                     .bridgehub_address
                     .expect("Missing `bridgehub_address`"),
+                config
+                    .genesis_config
+                    .bytecode_supplier_address
+                    .expect("Missing `bytecode_supplier_address`"),
                 config.genesis_config.chain_id.expect("Missing `chain_id`"),
                 genesis_input_source,
             )
@@ -219,7 +227,6 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             .rocks_db_path
             .join(BLOCK_REPLAY_WAL_DB_NAME),
         &genesis,
-        node_version.clone(),
     )
     .await;
 
@@ -409,13 +416,15 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     );
 
     // ======== Start Status Server ========
-    tasks.spawn(
-        run_status_server(
-            config.status_server_config.address.clone(),
-            stop_receiver.clone(),
-        )
-        .map(report_exit("Status server")),
-    );
+    if config.status_server_config.enabled {
+        tasks.spawn(
+            run_status_server(
+                config.status_server_config.address.clone(),
+                stop_receiver.clone(),
+            )
+            .map(report_exit("Status server")),
+        );
+    }
 
     // =========== Start JSON RPC ========
 
@@ -445,34 +454,42 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         None
     };
 
-    let (pending_block_context_sender, pending_block_context_receiver) = watch::channel(None);
+    let (last_constructed_block_ctx_sender, last_constructed_block_ctx_receiver) =
+        watch::channel(None);
     tasks.spawn(
         run_jsonrpsee_server(
             config.rpc_config.clone().into(),
             chain_id,
-            node_startup_state.l1_state.bridgehub_address(),
+            bridgehub_address,
+            bytecode_supplier_address,
             rpc_storage,
             l2_mempool.clone(),
             genesis_input_source,
             tx_acceptance_state_receiver,
-            pending_block_context_receiver,
+            last_constructed_block_ctx_receiver,
             main_node_provider,
         )
         .map(report_exit("JSON-RPC server")),
     );
 
     tracing::info!("Initializing pubdata price provider");
+    // Channels for GasAdjuster->BlockContextProvider communication.
     let (pubdata_price_sender, pubdata_price_receiver) = watch::channel(None);
+    let (blob_fill_ratio_sender, blob_fill_ratio_receiver) = watch::channel(None);
+    // Channel for Batcher->GasAdjuster communication. Batcher send sidecar to gas adjuster to estimate blob fill ratio.
+    let (sidecar_sender, sidecar_receiver) = tokio::sync::mpsc::channel(10);
     if config.sequencer_config.is_main_node() {
         let gas_adjuster_config = gas_adjuster_config(
             config.gas_adjuster_config.clone(),
             config.l1_sender_config.pubdata_mode,
-            config.l1_sender_config.max_priority_fee_per_gas_gwei,
+            config.l1_sender_config.max_priority_fee_per_gas.0,
         );
         let gas_adjuster = GasAdjuster::new(
             l1_provider.clone().erased(),
             gas_adjuster_config,
             pubdata_price_sender,
+            blob_fill_ratio_sender,
+            sidecar_receiver,
         )
         .await
         .unwrap();
@@ -510,14 +527,14 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         chain_id,
         config.sequencer_config.block_gas_limit,
         config.sequencer_config.block_pubdata_limit_bytes,
-        node_version,
         current_protocol_version.clone(),
         config.sequencer_config.fee_collector_address,
         config.sequencer_config.base_fee_override,
         config.sequencer_config.pubdata_price_override,
         config.sequencer_config.native_price_override,
         pubdata_price_receiver,
-        pending_block_context_sender,
+        blob_fill_ratio_receiver,
+        last_constructed_block_ctx_sender,
         config.l1_sender_config.pubdata_mode,
     );
 
@@ -527,7 +544,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         L1UpgradeTxWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
             node_startup_state.l1_state.diamond_proxy.clone(),
-            config.genesis_config.bytecode_supplier_address,
+            bytecode_supplier_address,
             current_protocol_version,
             l1_upgrade_transactions_sender,
         )
@@ -538,13 +555,15 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     );
 
     // ========== Start Sequencer ===========
-    tasks.spawn(
-        replay_server(
-            block_replay_storage.clone(),
-            config.sequencer_config.block_replay_server_address.clone(),
-        )
-        .map(report_exit("replay server")),
-    );
+    if config.sequencer_config.block_replay_server_enabled {
+        tasks.spawn(
+            replay_server(
+                block_replay_storage.clone(),
+                config.sequencer_config.block_replay_server_address.clone(),
+            )
+            .map(report_exit("replay server")),
+        );
+    }
 
     let repositories_clone = repositories.clone();
     tasks.spawn(async move {
@@ -579,6 +598,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             chain_id,
             stop_receiver.clone(),
             tx_acceptance_state_sender,
+            sidecar_sender,
             batch_ranges_for_batcher,
             last_executed_batch_data,
         )
@@ -599,6 +619,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             finality_storage,
             stop_receiver.clone(),
             tx_acceptance_state_sender,
+            chain_id,
         )
         .await;
     };
@@ -629,11 +650,13 @@ async fn run_main_node_pipeline(
     chain_id: u64,
     _stop_receiver: watch::Receiver<bool>,
     tx_acceptance_state_sender: watch::Sender<TransactionAcceptanceState>,
+    sidecar_sender: tokio::sync::mpsc::Sender<BlobTransactionSidecar>,
     batch_ranges_for_batcher: tokio::sync::mpsc::Receiver<CommittedBatch>,
     last_executed_batch_data: StoredBatchData,
 ) {
     let (fri_proving_step, fri_job_manager) = FriProvingPipelineStep::new(
         batch_storage.clone(),
+        node_state_on_startup.l1_state.last_proved_batch,
         config.prover_api_config.fri_job_timeout,
         config.prover_api_config.max_assigned_batch_range,
     );
@@ -645,15 +668,17 @@ async fn run_main_node_pipeline(
         config.prover_api_config.max_assigned_batch_range,
     );
 
-    tasks.spawn(
-        prover_server::run(
-            fri_job_manager.clone(),
-            snark_job_manager.clone(),
-            batch_storage.clone(),
-            config.prover_api_config.address.clone(),
-        )
-        .map(report_exit("prover_server_job")),
-    );
+    if config.prover_api_config.enabled {
+        tasks.spawn(
+            prover_server::run(
+                fri_job_manager.clone(),
+                snark_job_manager.clone(),
+                batch_storage.clone(),
+                config.prover_api_config.address.clone(),
+            )
+            .map(report_exit("prover_server_job")),
+        );
+    }
 
     if config.prover_api_config.fake_fri_provers.enabled {
         run_fake_fri_provers(&config.prover_api_config, tasks, fri_job_manager);
@@ -728,6 +753,7 @@ async fn run_main_node_pipeline(
             pubdata_limit_bytes: config.sequencer_config.block_pubdata_limit_bytes,
             batcher_config: config.batcher_config.clone(),
             pubdata_mode: config.l1_sender_config.pubdata_mode,
+            sidecar_sender,
             committed_batches: batch_ranges_for_batcher,
         })
         .pipe(BatchVerificationPipelineStep::new(
@@ -793,6 +819,7 @@ async fn run_en_pipeline(
     finality: impl ReadFinality + Clone,
     stop_receiver: watch::Receiver<bool>,
     tx_acceptance_state_sender: watch::Sender<TransactionAcceptanceState>,
+    chain_id: u64,
 ) {
     let internal_config_path = config
         .general_config
@@ -840,7 +867,7 @@ async fn run_en_pipeline(
             BatchVerificationClient::new(
                 finality.clone(),
                 config.batch_verification_config.signing_key.clone(),
-                config.genesis_config.chain_id.unwrap(),
+                chain_id,
                 *node_state_on_startup.l1_state.diamond_proxy.address(),
                 config.batch_verification_config.connect_address,
             ),
@@ -849,28 +876,30 @@ async fn run_en_pipeline(
         .spawn(tasks);
 
     // Run Priority Tree tasks for EN - not part of the pipeline.
-    let priority_tree_en_step = PriorityTreeENStep::new(
-        block_replay_storage,
-        Path::new(
-            &config
-                .general_config
-                .rocks_db_path
-                .join(PRIORITY_TREE_DB_NAME),
-        ),
-        batch_storage,
-        finality.clone(),
-        node_state_on_startup
-            .last_l1_executed_block
-            .min(node_state_on_startup.block_replay_storage_last_block),
-    )
-    .await
-    .unwrap();
+    if config.general_config.run_priority_tree {
+        let priority_tree_en_step = PriorityTreeENStep::new(
+            block_replay_storage,
+            Path::new(
+                &config
+                    .general_config
+                    .rocks_db_path
+                    .join(PRIORITY_TREE_DB_NAME),
+            ),
+            batch_storage,
+            finality.clone(),
+            node_state_on_startup
+                .last_l1_executed_block
+                .min(node_state_on_startup.block_replay_storage_last_block),
+        )
+        .await
+        .unwrap();
 
-    tasks.spawn(
-        priority_tree_en_step
-            .run()
-            .map(report_exit("priority_tree_en")),
-    );
+        tasks.spawn(
+            priority_tree_en_step
+                .run()
+                .map(report_exit("priority_tree_en")),
+        );
+    }
     tasks.spawn(
         clear_failing_block_config_task(finality, internal_config_manager)
             .map(report_exit("clear_failing_block_config_task")),

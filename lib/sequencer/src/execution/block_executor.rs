@@ -11,6 +11,7 @@ use tokio::time::Sleep;
 use vise::EncodeLabelValue;
 use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::types::BlockOutput;
+use zksync_os_metadata::NODE_SEMVER_VERSION;
 use zksync_os_observability::ComponentStateHandle;
 use zksync_os_storage_api::{
     MeteredViewState, OverriddenStateView, ReadStateHistory, ReplayRecord, WriteState,
@@ -332,6 +333,14 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
         .published_preimages
         .extend(command.force_preimages.iter().map(|(k, v)| (*k, v.clone())));
 
+    // Remove failed transactions from output.tx_results.
+    // Note: Rejected transactions don't affect the VM state or output,
+    // yet they are still returned in output.tx_results.
+    // This results in an inconsistency - transaction exists in output, but doesn't exist in
+    // replay_record.transactions.
+    // Here, we manually remove all such tx_results from VM output.
+    output.tx_results.retain(|tx| tx.is_ok());
+
     EXECUTION_METRICS
         .storage_writes_per_block
         .observe(output.storage_writes.len() as u64);
@@ -391,7 +400,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
             command.starting_l1_priority_id,
             executed_txs,
             command.previous_block_timestamp,
-            command.node_version,
+            NODE_SEMVER_VERSION.clone(),
             command.protocol_version,
             block_hash_output,
             command.force_preimages,

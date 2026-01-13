@@ -10,7 +10,7 @@ use zksync_os_batch_types::{BatchInfo, BatchSignatureSet};
 use zksync_os_contract_interface::models::StoredBatchInfo;
 use zksync_os_observability::LatencyDistributionTracker;
 use zksync_os_types::PubdataMode;
-use zksync_os_types::{ExecutionVersion, ProtocolSemanticVersion, ProvingVersion};
+use zksync_os_types::{ProtocolSemanticVersion, ProvingVersion};
 // todo: these models are used throughout the batcher subsystem - not only l1 sender
 //       we will move them to `types` or `batcher_types` when an analogous crate is created in `zksync-os`
 
@@ -39,6 +39,8 @@ pub struct BatchMetadata {
     pub execution_version: u32,
     #[serde(default = "default_protocol_version")] // Default to allow deserializing older objects
     pub protocol_version: ProtocolSemanticVersion,
+    #[serde(default)]
+    pub computational_native_used: Option<u64>,
 }
 
 impl BatchMetadata {
@@ -49,13 +51,8 @@ impl BatchMetadata {
             .vk_hash())
     }
 
-    /// As a temporary flexibility measure, we allow to set different versions for the same execution version.
-    /// For details see doc comment to `from_forward_run_execution_version`
     pub fn proving_version(&self) -> anyhow::Result<ProvingVersion> {
-        let forward_run_execution_version = ExecutionVersion::try_from(self.execution_version)?;
-        Ok(ProvingVersion::from_forward_run_execution_version(
-            forward_run_execution_version,
-        ))
+        Ok(ProvingVersion::try_from(self.protocol_version.clone())?)
     }
 }
 
@@ -80,6 +77,9 @@ pub enum BatchSignatureData {
     Signed {
         signatures: BatchSignatureSet,
     },
+    /// Batch was already committed, but is going through pipeline the second time.
+    /// We do not need to have signatures for it now
+    AlreadyCommitted,
     // default to allow deserializing of older objects
     /// Batch signatures are not enabled
     #[default]
@@ -180,6 +180,8 @@ pub type ProverInput = Vec<u32>;
 pub enum FriProof {
     // Fake proof for testing purposes
     Fake,
+    // Marker for batches that were already proven on L1, so we don't need to prove them again
+    AlreadySubmittedToL1,
     Real(RealFriProof),
 }
 
@@ -212,7 +214,7 @@ impl FriProof {
     pub fn proof(&self) -> Option<&[u8]> {
         match self {
             FriProof::Real(real) => Some(real.proof()),
-            FriProof::Fake => None,
+            FriProof::Fake | FriProof::AlreadySubmittedToL1 => None,
         }
     }
 }
@@ -230,6 +232,7 @@ impl Debug for FriProof {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             FriProof::Fake => write!(f, "Fake"),
+            FriProof::AlreadySubmittedToL1 => write!(f, "AlreadySubmittedToL1"),
             FriProof::Real(_) => write!(
                 f,
                 "Real(proving_execution_version={:?}, len: {:?})",

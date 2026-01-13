@@ -1,48 +1,107 @@
+use clap::{Parser, Subcommand};
 use smart_config::value::ExposeSecret;
-use smart_config::{ConfigRepository, ConfigSchema, DescribeConfig, Environment};
-use std::time::Duration;
+use smart_config::{ConfigRepository, ConfigSources, Environment, Json};
+use std::{fs, future, path::Path, time::Duration};
+use tempfile::TempDir;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use zksync_os_internal_config::InternalConfigManager;
+use zksync_os_metadata::NODE_VERSION;
+use zksync_os_object_store::ObjectStoreMode;
 use zksync_os_observability::prometheus::PrometheusExporterConfig;
-use zksync_os_server::config::{
-    BatchVerificationConfig, BatcherConfig, Config, GasAdjusterConfig, GeneralConfig,
-    GenesisConfig, L1SenderConfig, L1WatcherConfig, MempoolConfig, ObservabilityConfig,
-    ProverApiConfig, ProverInputGeneratorConfig, RebuildBlocksConfig, RpcConfig, SequencerConfig,
-    StateBackendConfig, StatusServerConfig, TxValidatorConfig,
-};
 use zksync_os_server::zkstack_config::ZkStackConfig;
 use zksync_os_server::{INTERNAL_CONFIG_FILE_NAME, run};
+use zksync_os_server::{
+    config::{
+        BatchVerificationConfig, BatcherConfig, Config, ConfigArgs, GasAdjusterConfig,
+        GeneralConfig, GenesisConfig, L1SenderConfig, L1WatcherConfig, MempoolConfig,
+        ObservabilityConfig, ProverApiConfig, ProverInputGeneratorConfig, RebuildBlocksConfig,
+        RpcConfig, SequencerConfig, StateBackendConfig, StatusServerConfig, TxValidatorConfig,
+    },
+    config_constants::{DEFAULT_ROCKS_DB_PATH, PROTOCOL_VERSION},
+};
 use zksync_os_state::StateHandle;
 use zksync_os_state_full_diffs::FullDiffsState;
 
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    /// Configuration-related tools.
+    Config(ConfigArgs),
+}
+
+#[derive(Debug, Parser)]
+#[command(author = "Matter Labs", version, about = "ZKsync OS node", long_about = None)]
+struct Cli {
+    /// Path to a JSON config file. If not specified, default config will attempted to be loaded to fill in the config
+    /// values for local setup. If default config is missing, no configs will be loaded, and they must be explicitly set
+    /// via other configuration means (e.g. environment variables). Env variables override config settings from the file
+    /// if both are provided.
+    #[arg(long)]
+    config: Option<String>,
+
+    #[command(subcommand)]
+    cmd: Option<CliCommand>,
+}
+
+fn load_config_defaults(config_sources: &mut ConfigSources, config_path: Option<String>) {
+    // Process the config file if provided or if default exists
+    let config_path: Option<String> = config_path.or_else(|| {
+        let default_path = format!("./local-chains/{PROTOCOL_VERSION}/config.json");
+        Path::new(&default_path).exists().then_some(default_path)
+    });
+
+    if let Some(config_path) = &config_path {
+        let config_contents =
+            fs::read_to_string(config_path).expect("Failed to read config file from provided path");
+        let config_json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&config_contents)
+                .expect("Failed to parse config file from provided path");
+        config_sources.push(Json::new(config_path, config_json));
+    }
+}
+
 #[tokio::main]
 pub async fn main() {
+    let opt = Cli::parse();
+
     // =========== load configs ===========
-    let mut config = build_external_config();
+    let config_schema = Config::schema();
+    let mut config_sources = ConfigSources::default();
+
+    // Process the config file if provided or if default exists
+    load_config_defaults(&mut config_sources, opt.config);
+
+    let mut env = Environment::prefixed("");
+    // Enables JSON coercion - env variables with `__JSON` suffix can be used to force value
+    // deserialization as JSON instead of plain string. This is useful to distinguish between "null"
+    // and `null` (missing value). Usage example: `GENESIS_BRIDGEHUB_ADDRESS__JSON=null`
+    env.coerce_json()
+        .expect("failed to coerce JSON envvar values");
+    config_sources.push(env);
 
     // =========== init observability ===========
+    let observability_config =
+        Config::observability(config_sources.clone()).expect("failed parsing observability config");
     let logs = zksync_os_observability::Logs::new(
-        config.observability_config.log.format,
-        config.observability_config.log.use_color,
+        observability_config.log.format,
+        observability_config.log.use_color,
     );
-    let sentry = config
-        .observability_config
+    let sentry = observability_config
         .sentry
         .dsn_url
         .clone()
         .map(|sentry_url| {
             zksync_os_observability::Sentry::new(&sentry_url)
                 .expect("Failed to create Sentry config")
-                .with_node_version(Some(zksync_os_server::metadata::NODE_VERSION.to_string()))
-                .with_environment(config.observability_config.sentry.environment.clone())
+                .with_node_version(Some(NODE_VERSION.to_string()))
+                .with_environment(observability_config.sentry.environment.clone())
         });
     let otlp = zksync_os_observability::OpenTelemetry::new(
-        config.observability_config.otlp.level,
-        config.observability_config.otlp.tracing_endpoint.clone(),
-        config.observability_config.otlp.logging_endpoint.clone(),
+        observability_config.otlp.level,
+        observability_config.otlp.tracing_endpoint.clone(),
+        observability_config.otlp.logging_endpoint.clone(),
     )
     .expect("Failed to create OpenTelemetry config");
 
@@ -51,24 +110,48 @@ pub async fn main() {
         .with_sentry(sentry)
         .with_opentelemetry(Some(otlp))
         .build();
+
+    let config_repo = ConfigRepository::new(&config_schema).with_all(config_sources);
+
+    // =========== handle the CLI subcommand if any ===========
+    if let Some(cmd) = opt.cmd {
+        match cmd {
+            CliCommand::Config(args) => {
+                args.run(config_repo, "").unwrap();
+                return;
+            }
+        }
+    }
+
+    let mut config = build_external_config(config_repo);
     tracing::info!(?config, "Loaded config");
-
     load_internal_config(&mut config);
-
-    let prometheus: PrometheusExporterConfig =
-        PrometheusExporterConfig::pull(config.observability_config.prometheus.port);
-
     // =========== init interruption channel ===========
 
     // todo: implement interruption handling in other tasks
     let (stop_sender, stop_receiver) = watch::channel(false);
     // ======= Run tasks ===========
     let main_stop = stop_receiver.clone(); // keep original for Prometheus
+    let ephemeral_enabled = config.general_config.ephemeral;
+    let _ephemeral_guard = ephemeral_enabled.then(|| enable_ephemeral_mode(&mut config));
+    let prometheus_port = config.observability_config.prometheus.port;
 
     let main_task = async move {
         match config.general_config.state_backend {
             StateBackendConfig::FullDiffs => run::<FullDiffsState>(main_stop.clone(), config).await,
             StateBackendConfig::Compacted => run::<StateHandle>(main_stop.clone(), config).await,
+        }
+    };
+
+    let prometheus_task = async {
+        if ephemeral_enabled {
+            tracing::info!("Ephemeral mode enabled, skipping Prometheus exporter");
+            // no-op for the ephemeral mode
+            future::pending::<anyhow::Result<()>>().await
+        } else {
+            let prometheus: PrometheusExporterConfig =
+                PrometheusExporterConfig::pull(prometheus_port);
+            prometheus.run(stop_receiver.clone()).await
         }
     };
 
@@ -85,7 +168,7 @@ pub async fn main() {
             }
         },
         _ = handle_delayed_termination(stop_sender) => {},
-        res = prometheus.run(stop_receiver) => {
+        res = prometheus_task => {
             match res {
                 Ok(_) => {
                     if *stop_receiver_copy.borrow() {
@@ -126,66 +209,7 @@ async fn handle_delayed_termination(stop_sender: watch::Sender<bool>) {
     }
 }
 
-fn build_external_config() -> Config {
-    // todo: change with the idiomatic approach
-    let mut schema = ConfigSchema::default();
-    schema
-        .insert(&GeneralConfig::DESCRIPTION, "general")
-        .expect("Failed to insert general config");
-    schema
-        .insert(&GenesisConfig::DESCRIPTION, "genesis")
-        .expect("Failed to insert genesis config");
-    schema
-        .insert(&RpcConfig::DESCRIPTION, "rpc")
-        .expect("Failed to insert rpc config");
-    schema
-        .insert(&MempoolConfig::DESCRIPTION, "mempool")
-        .expect("Failed to insert mempool config");
-    schema
-        .insert(&TxValidatorConfig::DESCRIPTION, "tx_validator")
-        .expect("Failed to insert tx_validator config");
-    schema
-        .insert(&SequencerConfig::DESCRIPTION, "sequencer")
-        .expect("Failed to insert sequencer config");
-    schema
-        .insert(&L1SenderConfig::DESCRIPTION, "l1_sender")
-        .expect("Failed to insert l1_sender config");
-    schema
-        .insert(&L1WatcherConfig::DESCRIPTION, "l1_watcher")
-        .expect("Failed to insert l1_watcher config");
-    schema
-        .insert(&BatcherConfig::DESCRIPTION, "batcher")
-        .expect("Failed to insert batcher config");
-    schema
-        .insert(
-            &ProverInputGeneratorConfig::DESCRIPTION,
-            "prover_input_generator",
-        )
-        .expect("Failed to insert prover_input_generator config");
-    schema
-        .insert(&ProverApiConfig::DESCRIPTION, "prover_api")
-        .expect("Failed to insert prover api config");
-    schema
-        .insert(&StatusServerConfig::DESCRIPTION, "status_server")
-        .expect("Failed to insert status server config");
-    schema
-        .insert(&ObservabilityConfig::DESCRIPTION, "observability")
-        .expect("Failed to insert observability config");
-    schema
-        .insert(&GasAdjusterConfig::DESCRIPTION, "gas_adjuster")
-        .expect("Failed to insert gas adjuster config");
-    schema
-        .insert(&BatchVerificationConfig::DESCRIPTION, "batch_verification")
-        .expect("Failed to insert batch verification config");
-
-    let mut env = Environment::prefixed("");
-    // Enables JSON coercion - env variables with `__JSON` suffix can be used to force value
-    // deserialization as JSON instead of plain string. This is useful to distinguish between "null"
-    // an `null` (missing value). Usage example: `GENESIS_BRIDGEHUB_ADDRESS__JSON=null`
-    env.coerce_json()
-        .expect("failed to coerce JSON envvar values");
-    let repo = ConfigRepository::new(&schema).with(env);
-
+fn build_external_config(repo: ConfigRepository<'_>) -> Config {
     let mut general_config = repo
         .single::<GeneralConfig>()
         .expect("Failed to load general config")
@@ -323,6 +347,37 @@ fn build_external_config() -> Config {
         gas_adjuster_config,
         batch_verification_config,
     }
+}
+
+fn enable_ephemeral_mode(config: &mut Config) -> Option<TempDir> {
+    let original_path = config.general_config.rocks_db_path.clone();
+    if original_path != Path::new(DEFAULT_ROCKS_DB_PATH) {
+        tracing::warn!(
+            original_path = %original_path.display(),
+            "general_rocks_db_path parameter is ignored in ephemeral mode"
+        );
+    }
+
+    let tempdir = tempfile::tempdir()
+        .expect("Failed to create temporary RocksDB directory for ephemeral mode");
+    let tempdir_path = tempdir.path();
+    tracing::info!(
+        path = %tempdir_path.display(),
+        "Ephemeral mode enabled. Using temporary directory for RocksDB and shared object store"
+    );
+
+    // Update config to use temporary directory
+    config.general_config.rocks_db_path = tempdir_path.join("node");
+    config.prover_api_config.object_store.mode = ObjectStoreMode::FileBacked {
+        file_backed_base_path: tempdir_path.join("shared"),
+    };
+
+    // Disable services that are not needed in ephemeral mode
+    config.prover_api_config.enabled = false;
+    config.status_server_config.enabled = false;
+    config.sequencer_config.block_replay_server_enabled = false;
+
+    Some(tempdir)
 }
 
 fn load_internal_config(config: &mut Config) {

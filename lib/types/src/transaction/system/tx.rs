@@ -42,18 +42,13 @@ mod tx_serde {
         #[serde(rename = "gas", with = "alloy::serde::quantity")]
         pub gas_limit: u64,
         #[serde(with = "alloy::serde::quantity")]
-        pub gas_per_pubdata_byte_limit: u64,
-        #[serde(with = "alloy::serde::quantity")]
         pub max_fee_per_gas: u128,
         #[serde(with = "alloy::serde::quantity")]
         pub max_priority_fee_per_gas: u128,
         #[serde(with = "alloy::serde::quantity")]
         pub nonce: u64,
         pub value: U256,
-        pub to_mint: U256,
-        pub refund_recipient: Address,
         pub input: Bytes,
-        pub factory_deps: Vec<B256>,
         #[serde(skip)]
         pub marker: std::marker::PhantomData<T>,
 
@@ -73,15 +68,11 @@ mod tx_serde {
                 initiator: BOOTLOADER_FORMAL_ADDRESS,
                 to: tx.to,
                 gas_limit: tx.gas_limit,
-                gas_per_pubdata_byte_limit: 0,
                 max_fee_per_gas: 0,
                 max_priority_fee_per_gas: 0,
                 nonce: 0,
                 value: U256::ZERO,
-                to_mint: U256::ZERO,
-                refund_recipient: Address::ZERO,
                 input: tx.input,
-                factory_deps: vec![],
                 marker: std::marker::PhantomData,
 
                 // Put defaults for signature fields
@@ -209,29 +200,10 @@ impl<T: SystemTxType> RlpEcdsaDecodableTx for SystemTransaction<T> {
     }
 }
 
-enum ServiceTxField<'b> {
-    U64(u64),
-    Bytes(&'b [u8]),
-}
-
-impl<'b> Encodable for ServiceTxField<'b> {
-    fn encode(&self, out: &mut dyn BufMut) {
-        match self {
-            ServiceTxField::U64(v) => v.encode(out),
-            ServiceTxField::Bytes(b) => (*b).encode(out),
-        }
-    }
-}
-
+// if something goes wrong with encoding, there's a chance that something is wrong here
 impl<T: SystemTxType> Encodable for SystemTransaction<T> {
     fn encode(&self, out: &mut dyn BufMut) {
-        let fields = vec![
-            ServiceTxField::U64(self.gas_limit),
-            ServiceTxField::Bytes(self.to.as_slice()),
-            ServiceTxField::Bytes(self.input.as_ref()),
-        ];
-
-        fields.encode(out);
+        self.rlp_encode(out);
     }
 
     fn length(&self) -> usize {
