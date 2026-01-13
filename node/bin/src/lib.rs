@@ -557,10 +557,11 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
 
     // ========== Start InteropRootsWatcher ===========
     tasks.spawn(
-        // todo: pass the real values here
         L1InteropRootsWatcher::new(
             node_startup_state.l1_state.bridgehub.clone(),
             interop_transactions_sender,
+            // todo: make this configurable
+            false,
         )
         .await
         .expect("failed to start Interop roots watcher")

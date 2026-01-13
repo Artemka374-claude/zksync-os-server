@@ -53,6 +53,18 @@ alloy::sol! {
         );
 
         function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
+
+        event AppendedInteropRoot (
+            uint256 indexed chainId,
+            uint256 indexed blockNumber,
+            bytes32 chainRoot
+        );
+
+        function addInteropRoot(
+            uint256 chainId,
+            uint256 blockOrBatchNumber,
+            bytes32[] calldata sides
+        );
     }
 
     // `ZKChainStorage.sol`

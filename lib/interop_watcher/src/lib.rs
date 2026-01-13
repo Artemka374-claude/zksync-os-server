@@ -7,7 +7,7 @@ use alloy::{
     providers::{DynProvider, Provider},
 };
 use tokio::sync::mpsc;
-use zksync_os_contract_interface::IMessageRoot::NewInteropRoot;
+use zksync_os_contract_interface::IMessageRoot::{AppendedInteropRoot, NewInteropRoot};
 use zksync_os_contract_interface::{Bridgehub, InteropRoot};
 use zksync_os_types::InteropRootsEnvelope;
 
@@ -19,6 +19,7 @@ pub struct L1InteropRootsWatcher {
     provider: DynProvider,
     // first number is block number, second is log index
     next_log_to_scan_from: Option<(u64, u64)>,
+    gateway_mode_enabled: bool,
     output: mpsc::Sender<InteropRootsEnvelope>,
 }
 
@@ -26,6 +27,7 @@ impl L1InteropRootsWatcher {
     pub async fn new(
         bridgehub: Bridgehub<DynProvider>,
         output: mpsc::Sender<InteropRootsEnvelope>,
+        gateway_mode_enabled: bool,
     ) -> anyhow::Result<Self> {
         let provider = bridgehub.provider().clone();
         let contract_address = bridgehub
@@ -38,6 +40,7 @@ impl L1InteropRootsWatcher {
             contract_address,
             next_log_to_scan_from: None,
             output,
+            gateway_mode_enabled,
         })
     }
 
@@ -55,11 +58,17 @@ impl L1InteropRootsWatcher {
         to_block: u64,
         start_log_index: u64,
     ) -> anyhow::Result<Vec<InteropRoot>> {
+        let event_signature = if self.gateway_mode_enabled {
+            NewInteropRoot::SIGNATURE_HASH
+        } else {
+            AppendedInteropRoot::SIGNATURE_HASH
+        };
+
         let filter = Filter::new()
             .from_block(from_block)
             .to_block(to_block)
             .address(self.contract_address)
-            .event_signature(NewInteropRoot::SIGNATURE_HASH);
+            .event_signature(event_signature);
         let logs = self.provider.get_logs(&filter).await?;
 
         let mut interop_roots = Vec::new();
@@ -70,19 +79,31 @@ impl L1InteropRootsWatcher {
             if log_block_number == from_block && log_index_in_block < start_log_index {
                 continue;
             }
-            let interop_root_event = NewInteropRoot::decode_log(&log.inner)?.data;
 
-            anyhow::ensure!(
-                interop_root_event.sides.len() == 1,
-                "Expected exactly one side for interop root, found {}",
-                interop_root_event.sides.len()
-            );
+            let interop_root = if self.gateway_mode_enabled {
+                let interop_root_event = NewInteropRoot::decode_log(&log.inner)?.data;
 
-            let interop_root = InteropRoot {
-                chainId: interop_root_event.chainId,
-                blockOrBatchNumber: interop_root_event.blockNumber,
-                sides: interop_root_event.sides,
+                anyhow::ensure!(
+                    interop_root_event.sides.len() == 1,
+                    "Expected exactly one side for interop root, found {}",
+                    interop_root_event.sides.len()
+                );
+
+                InteropRoot {
+                    chainId: interop_root_event.chainId,
+                    blockOrBatchNumber: interop_root_event.blockNumber,
+                    sides: interop_root_event.sides,
+                }
+            } else {
+                let interop_root_event = AppendedInteropRoot::decode_log(&log.inner)?.data;
+
+                InteropRoot {
+                    chainId: interop_root_event.chainId,
+                    blockOrBatchNumber: interop_root_event.blockNumber,
+                    sides: vec![interop_root_event.chainRoot],
+                }
             };
+
             interop_roots.push(interop_root);
 
             self.next_log_to_scan_from = Some((log_block_number, log_index_in_block + 1));
@@ -128,7 +149,10 @@ impl L1InteropRootsWatcher {
 
         if !interop_roots.is_empty() {
             self.output
-                .send(InteropRootsEnvelope::from_interop_roots(interop_roots))
+                .send(InteropRootsEnvelope::from_interop_roots(
+                    interop_roots,
+                    self.gateway_mode_enabled,
+                ))
                 .await?;
         }
 

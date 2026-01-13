@@ -4,6 +4,7 @@ use crate::transaction::{system::envelope::SystemTransactionEnvelope, tx::System
 use alloy::primitives::{Address, Bytes, address};
 use alloy::sol_types::SolCall;
 use serde::{Deserialize, Serialize};
+use zksync_os_contract_interface::IMessageRoot::addInteropRootCall;
 use zksync_os_contract_interface::{IMessageRoot::addInteropRootsInBatchCall, InteropRoot};
 
 pub mod envelope;
@@ -20,11 +21,29 @@ const DEFAULT_GAS_LIMIT: u64 = 72_000_000;
 pub type InteropRootsEnvelope = SystemTransactionEnvelope<InteropRootsTxType>;
 
 impl InteropRootsEnvelope {
-    pub fn from_interop_roots(interop_roots: Vec<InteropRoot>) -> Self {
-        let calldata = addInteropRootsInBatchCall {
-            interopRootsInput: interop_roots,
-        }
-        .abi_encode();
+    pub fn from_interop_roots(
+        interop_roots: Vec<InteropRoot>,
+        is_gateway_transaction: bool,
+    ) -> Self {
+        let calldata = if is_gateway_transaction {
+            addInteropRootsInBatchCall {
+                interopRootsInput: interop_roots,
+            }
+            .abi_encode()
+        } else {
+            assert_eq!(
+                interop_roots.len(),
+                1,
+                "Expected 1 interop root for non-gateway transaction"
+            );
+
+            addInteropRootCall {
+                chainId: interop_roots[0].chainId,
+                blockOrBatchNumber: interop_roots[0].blockOrBatchNumber,
+                sides: interop_roots[0].sides.clone(),
+            }
+            .abi_encode()
+        };
 
         let transaction = SystemTransaction {
             gas_limit: DEFAULT_GAS_LIMIT,
@@ -40,10 +59,16 @@ impl InteropRootsEnvelope {
     }
 
     pub fn interop_roots_count(&self) -> u64 {
-        let interop_roots = addInteropRootsInBatchCall::abi_decode(&self.inner.input)
-            .expect("Failed to decode interop roots calldata")
-            .interopRootsInput;
-        interop_roots.len() as u64
+        match addInteropRootsInBatchCall::abi_decode(&self.inner.input) {
+            Ok(interop_roots) => interop_roots.interopRootsInput.len() as u64,
+            Err(_) => {
+                if addInteropRootCall::abi_decode(&self.inner.input).is_ok() {
+                    1
+                } else {
+                    panic!("Failed to decode interop roots calldata");
+                }
+            }
+        }
     }
 }
 
