@@ -23,6 +23,7 @@ pub struct BestTransactionsStream<'a> {
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
     interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
+    interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
     pending_transactions_listener: mpsc::Receiver<TxHash>,
     best_l2_transactions:
         Box<dyn BestTransactions<Item = Arc<ValidPoolTransaction<L2PooledTransaction>>>>,
@@ -37,6 +38,7 @@ pub struct BestTransactionsStream<'a> {
 pub fn best_transactions<'a>(
     l2_mempool: &impl L2TransactionPool,
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
+    interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
     interop_transactions: &'a mut mpsc::Receiver<InteropRootsEnvelope>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
 ) -> BestTransactionsStream<'a> {
