@@ -1,6 +1,7 @@
 {
     "general": {
-        "ephemeral": true
+        "ephemeral": false,
+        "rocks_db_path": "./db/node2"
     },
     "genesis": {
         "bridgehub_address": "0x19412d30dd839be35847a6c2162bbc4ae774db46",
@@ -18,5 +19,22 @@
     },
     "mempool": {
         "minimal_protocol_basefee": 0
+    },
+    "observability": {
+        "prometheus": {
+            "port": 3314
+        }
+    },
+    "prover_api": {
+        "object_store": {
+            "file_backed_base_path": "./db/shared2"
+        },
+        "address": "0.0.0.0:3125"
+    },
+    "sequencer": {
+        "block_replay_server_address": "0.0.0.0:3054"
+    },
+    "status_server": {
+        "address": "0.0.0.0:3073"
     }
 }

@@ -89,7 +89,9 @@ impl ReplayRecord {
         if let Some(first_interop_root_log_index) = first_interop_root_log_index {
             assert!(
                 first_interop_root_log_index >= interop_root_log_start_index,
-                "First interop root log index must be greater than or equal to interop_root_log_start_index"
+                "First interop root log index must be greater than or equal to interop_root_log_start_index, first_interop_root_log_index: {:?}, interop_root_log_start_index: {:?}",
+                first_interop_root_log_index,
+                interop_root_log_start_index
             );
         }
 

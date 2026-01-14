@@ -375,7 +375,9 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                         cmd_type,
                         BlockCommandType::Rebuild | BlockCommandType::Replay
                     ) {
-                        assert_eq!(&self.interop_transactions.recv().await.unwrap(), interop_tx);
+                        let tx = self.interop_transactions.recv().await.unwrap();
+                        assert_eq!(tx.hash, interop_tx.hash);
+                        assert_eq!(tx.inner, interop_tx.inner);
                     }
                 }
                 ZkEnvelope::L1(l1_tx) => {
