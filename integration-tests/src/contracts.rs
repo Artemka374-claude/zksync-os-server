@@ -54,6 +54,13 @@ alloy::sol!(
     "test-contracts/out/SimpleRevert.sol/SimpleRevert.json"
 );
 
+alloy::sol!(
+    /// Contract that calls the P256 precompile and records remaining gas.
+    #[sol(rpc)]
+    P256GasRecorder,
+    "test-contracts/out/P256GasRecorder.sol/P256GasRecorder.json"
+);
+
 alloy::sol! {
     #[sol(rpc)]
     interface IBaseToken {

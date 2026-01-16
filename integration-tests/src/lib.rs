@@ -191,6 +191,9 @@ impl Tester {
         let sequencer_config = SequencerConfig {
             block_replay_server_address: replay_address.clone(),
             fee_collector_address: Address::random(),
+            // Enable REVM consistency checker for all integration test runs.
+            revm_consistency_checker_enabled: true,
+            revm_consistency_checker_revert_on_divergence: true,
             ..Default::default()
         };
         let rpc_config = RpcConfig {
