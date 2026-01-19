@@ -10,7 +10,7 @@ use zksync_os_metadata::NODE_SEMVER_VERSION;
 use zksync_os_rocksdb::RocksDB;
 use zksync_os_rocksdb::db::{NamedColumnFamily, WriteBatch};
 use zksync_os_storage_api::{ReadReplay, ReplayRecord, WriteReplay};
-use zksync_os_types::ProtocolSemanticVersion;
+use zksync_os_types::{InteropRootsLogIndex, ProtocolSemanticVersion};
 
 /// A write-ahead log storing [`ReplayRecord`]s.
 ///
@@ -43,6 +43,8 @@ pub enum BlockReplayColumnFamily {
     ProtocolVersion,
     ForcePreimages,
     BlockOutputHash,
+    InteropRootLogStartIndex,
+    InteropRootIndexes,
     /// Stores the latest appended block number under a fixed key.
     Latest,
 }
@@ -55,8 +57,10 @@ impl NamedColumnFamily for BlockReplayColumnFamily {
         BlockReplayColumnFamily::Txs,
         BlockReplayColumnFamily::NodeVersion,
         BlockReplayColumnFamily::ProtocolVersion,
-        BlockReplayColumnFamily::ForcePreimages,
         BlockReplayColumnFamily::BlockOutputHash,
+        BlockReplayColumnFamily::ForcePreimages,
+        BlockReplayColumnFamily::InteropRootLogStartIndex,
+        BlockReplayColumnFamily::InteropRootIndexes,
         BlockReplayColumnFamily::Latest,
     ];
 
@@ -69,6 +73,8 @@ impl NamedColumnFamily for BlockReplayColumnFamily {
             BlockReplayColumnFamily::ProtocolVersion => "protocol_version",
             BlockReplayColumnFamily::BlockOutputHash => "block_output_hash",
             BlockReplayColumnFamily::ForcePreimages => "force_preimages",
+            BlockReplayColumnFamily::InteropRootLogStartIndex => "interop_root_log_start_index",
+            BlockReplayColumnFamily::InteropRootIndexes => "interop_root_indexes",
             BlockReplayColumnFamily::Latest => "latest",
         }
     }
@@ -100,6 +106,8 @@ impl BlockReplayStorage {
                     protocol_version: genesis_tx.protocol_version,
                     block_output_hash: B256::ZERO,
                     force_preimages: genesis_tx.force_deploy_preimages,
+                    interop_root_log_start_index: InteropRootsLogIndex::default(),
+                    interop_root_indexes: vec![],
                 },
                 None,
             )
@@ -164,6 +172,28 @@ impl BlockReplayStorage {
             BlockReplayColumnFamily::ForcePreimages,
             &db_key,
             &force_preimages_value,
+        );
+
+        let interop_root_log_start_index_value = bincode::serde::encode_to_vec(
+            &record.interop_root_log_start_index,
+            bincode::config::standard(),
+        )
+        .expect("Failed to serialize record.interop_root_log_start_index");
+        batch.put_cf(
+            BlockReplayColumnFamily::InteropRootLogStartIndex,
+            &db_key,
+            &interop_root_log_start_index_value,
+        );
+
+        let interop_root_indexes_value = bincode::serde::encode_to_vec(
+            &record.interop_root_indexes,
+            bincode::config::standard(),
+        )
+        .expect("Failed to serialize record.interop_root_indexes");
+        batch.put_cf(
+            BlockReplayColumnFamily::InteropRootIndexes,
+            &db_key,
+            &interop_root_indexes_value,
         );
 
         self.db
@@ -294,6 +324,42 @@ impl ReadReplay for BlockReplayStorage {
             .expect("Failed to read from BlockOutputHash CF")
             .expect("BlockOutputHash must be written atomically with Context");
 
+        let interop_root_log_start_index = if let Some(interop_root_log_start_index) = self
+            .db
+            .get_cf(BlockReplayColumnFamily::InteropRootLogStartIndex, &key)
+            .expect("Failed to read from InteropRootLogStartIndex CF")
+        {
+            let stored: InteropRootsLogIndex = bincode::serde::decode_from_slice(
+                &interop_root_log_start_index,
+                bincode::config::standard(),
+            )
+            .expect("Failed to deserialize interop root log start index")
+            .0;
+            stored
+        } else {
+            InteropRootsLogIndex::default()
+        };
+
+        let interop_root_indexes = if let Some(interop_root_indexes) = self
+            .db
+            .get_cf(BlockReplayColumnFamily::InteropRootIndexes, &key)
+            .expect("Failed to read from InteropRootIndexes CF")
+        {
+            let stored: Vec<(B256, InteropRootsLogIndex)> =
+                bincode::serde::decode_from_slice::<Vec<(Vec<u8>, InteropRootsLogIndex)>, _>(
+                    &interop_root_indexes,
+                    bincode::config::standard(),
+                )
+                .expect("Failed to deserialize interop root indexes")
+                .0
+                .into_iter()
+                .map(|(hash, log_index)| (B256::from_slice(&hash), log_index))
+                .collect();
+            stored
+        } else {
+            vec![]
+        };
+
         Some(ReplayRecord {
             block_context: bincode::serde::decode_from_slice(
                 &block_context,
@@ -318,6 +384,8 @@ impl ReadReplay for BlockReplayStorage {
             protocol_version,
             block_output_hash: B256::from_slice(&block_output_hash),
             force_preimages,
+            interop_root_log_start_index,
+            interop_root_indexes,
         })
     }
 
