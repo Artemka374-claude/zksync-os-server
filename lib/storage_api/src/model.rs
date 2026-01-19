@@ -63,6 +63,7 @@ impl ReplayRecord {
         protocol_version: ProtocolSemanticVersion,
         block_output_hash: B256,
         force_preimages: Vec<(B256, Vec<u8>)>,
+        last_interop_event_index: InteropRootsLogIndex,
     ) -> Self {
         let first_l1_tx_priority_id = transactions.iter().find_map(|tx| match tx.envelope() {
             ZkEnvelope::InteropRoots(_) => None,
@@ -85,7 +86,7 @@ impl ReplayRecord {
             protocol_version,
             block_output_hash,
             force_preimages,
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            last_interop_event_index,
         }
     }
 }

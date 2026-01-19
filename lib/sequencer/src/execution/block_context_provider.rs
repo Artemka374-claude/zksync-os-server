@@ -19,7 +19,7 @@ use zksync_os_mempool::{
 };
 use zksync_os_storage_api::ReplayRecord;
 use zksync_os_types::{
-    ExecutionVersion, InteropRootsEnvelope, L1PriorityEnvelope, L2Envelope,
+    ExecutionVersion, InteropRootsEnvelope, InteropRootsLogIndex, L1PriorityEnvelope, L2Envelope,
     ProtocolSemanticVersion, PubdataMode, UpgradeTransaction, ZkEnvelope,
 };
 
@@ -35,6 +35,7 @@ use zksync_os_types::{
 ///  this is easily fixable if needed.
 pub struct BlockContextProvider<Mempool> {
     next_l1_priority_id: u64,
+    last_interop_event_index: InteropRootsLogIndex,
     l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
     upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
     interop_transactions: mpsc::Receiver<InteropRootsEnvelope>,
@@ -62,6 +63,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         next_l1_priority_id: u64,
+        last_interop_event_index: InteropRootsLogIndex,
         l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
         upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
         interop_transactions: mpsc::Receiver<InteropRootsEnvelope>,
@@ -83,6 +85,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
     ) -> Self {
         Self {
             next_l1_priority_id,
+            last_interop_event_index,
             l1_transactions,
             upgrade_transactions,
             interop_transactions,
@@ -219,6 +222,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     expected_block_output_hash: None,
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages,
+                    last_interop_event_index: self.last_interop_event_index.clone(),
                     is_interop_only_block,
                 }
             }
@@ -256,6 +260,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages: record.force_preimages,
                     is_interop_only_block,
+                    last_interop_event_index: record.last_interop_event_index.clone(),
                 }
             }
             BlockCommand::Rebuild(rebuild) => {
@@ -341,6 +346,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages: rebuild.replay_record.force_preimages,
                     is_interop_only_block,
+                    last_interop_event_index: self.last_interop_event_index.clone(),
                 }
             }
         };

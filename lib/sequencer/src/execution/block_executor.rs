@@ -65,6 +65,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
     };
     let mut deadline: Option<Pin<Box<Sleep>>> = None; // will arm after 1st tx success
     let mut interop_roots_count = 0;
+    let mut last_interop_event_index = command.last_interop_event_index;
 
     /* ---------- main loop ------------------------------------------ */
     // seal_reason must only be used for observability - handling must remain generic
@@ -101,38 +102,6 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
                             signer=?tx.inner.signer(),
                             "Executing transaction..."
                         );
-
-                        if command.is_interop_only_block {
-                            match tx.tx_type() {
-                                ZkTxType::InteropRoots => {
-                                    let current_interop_roots_count = match tx.inner.inner() {
-                                        ZkEnvelope::InteropRoots(interop_roots_tx) => {
-                                            interop_roots_tx.interop_roots_count()
-                                        }
-                                        _ => 0,
-                                    };
-
-                                    if interop_roots_count + current_interop_roots_count > INTEROP_ROOTS_PER_BLOCK {
-                                        if matches!(command.seal_policy, SealPolicy::UntilExhausted { allowed_to_finish_early: false }) {
-                                            // We trust that the execution stream will not break protocol invariants.
-                                            tracing::info!(block = ctx.block_number, "interop block contains too many interop roots, but seal policy requires full exhaustion");
-                                        }
-
-                                        break SealReason::LimitedInteropOnlyBlock;
-                                    }
-
-                                    interop_roots_count += current_interop_roots_count;
-                                }
-                                _ => {
-                                    if matches!(command.seal_policy, SealPolicy::UntilExhausted { allowed_to_finish_early: false }) {
-                                        // We trust that the execution stream will not break protocol invariants.
-                                        tracing::info!(block = ctx.block_number, "interop-only block contains non-interop transaction, but seal policy requires full exhaustion");
-                                    }
-
-                                    break SealReason::LimitedInteropOnlyBlock;
-                                }
-                            }
-                        }
 
                         match (command.is_interop_only_block, tx.tx_type(), command.seal_policy) {
                             (false, _, _) => {
@@ -185,6 +154,11 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
                                     output=?res,
                                     "Transaction executed"
                                 );
+
+                                // todo: not sure this should be the same way for rebuild
+                                if let ZkEnvelope::InteropRoots(interop_roots_tx) = tx.inner.inner() && matches!(command.seal_policy, SealPolicy::Decide(..) | SealPolicy::UntilExhausted { allowed_to_finish_early: true }) {
+                                    last_interop_event_index = interop_roots_tx.last_log_index.clone();
+                                }
 
                                 let tx_type = tx.tx_type();
                                 executed_txs.push(tx);
@@ -404,6 +378,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
             command.protocol_version,
             block_hash_output,
             command.force_preimages,
+            last_interop_event_index,
         ),
         purged_txs,
     ))
