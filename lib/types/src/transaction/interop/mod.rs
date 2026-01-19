@@ -7,7 +7,7 @@ use alloy::primitives::ChainId;
 use alloy::primitives::{Address, B256, Bytes, TxKind, U256, address};
 use alloy::rpc::types::{AccessList, SignedAuthorization};
 use alloy::sol_types::SolCall;
-use alloy_rlp::{BufMut, Encodable};
+use alloy_rlp::{BufMut, Decodable, Encodable};
 use serde::{Deserialize, Serialize};
 use zksync_os_contract_interface::IMessageRoot::addInteropRootCall;
 use zksync_os_contract_interface::{IMessageRoot::addInteropRootsInBatchCall, InteropRoot};
@@ -43,6 +43,22 @@ pub struct InteropRootsEnvelope {
 pub struct InteropRootsLogIndex {
     pub block_number: u64,
     pub index_in_block: u64,
+}
+
+impl Encodable for InteropRootsLogIndex {
+    fn encode(&self, out: &mut dyn BufMut) {
+        self.block_number.encode(out);
+        self.index_in_block.encode(out);
+    }
+}
+
+impl Decodable for InteropRootsLogIndex {
+    fn decode(buf: &mut &[u8]) -> alloy::rlp::Result<Self> {
+        Ok(Self {
+            block_number: Decodable::decode(buf)?,
+            index_in_block: Decodable::decode(buf)?,
+        })
+    }
 }
 
 impl InteropRootsEnvelope {

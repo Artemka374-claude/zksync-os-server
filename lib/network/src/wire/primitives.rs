@@ -3,6 +3,7 @@
 use alloy::primitives::bytes::BufMut;
 use alloy::primitives::{B256, Bytes, U256};
 use alloy_rlp::{Decodable, Encodable, RlpDecodable, RlpEncodable};
+use zksync_os_types::InteropRootsLogIndex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]
 pub struct ForcedPreimage {
@@ -33,4 +34,10 @@ impl Decodable for BlockHashes {
             .map_err(|_| alloy::rlp::Error::Custom("expected array of length 256"))?;
         Ok(Self(array))
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]
+pub struct InteropRootMetadata {
+    pub hash: B256,
+    pub log_index: InteropRootsLogIndex,
 }

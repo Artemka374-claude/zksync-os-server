@@ -3,7 +3,7 @@
 pub mod message;
 
 pub mod primitives;
-pub use primitives::{BlockHashes, ForcedPreimage};
+pub use primitives::{BlockHashes, ForcedPreimage, InteropRootMetadata};
 
 pub mod replays;
 pub use replays::{BlockReplays, GetBlockReplays};
