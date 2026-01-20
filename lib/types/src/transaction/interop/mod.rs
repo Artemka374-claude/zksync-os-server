@@ -50,6 +50,10 @@ impl Encodable for InteropRootsLogIndex {
         self.block_number.encode(out);
         self.index_in_block.encode(out);
     }
+
+    fn length(&self) -> usize {
+        self.block_number.length() + self.index_in_block.length()
+    }
 }
 
 impl Decodable for InteropRootsLogIndex {
@@ -122,11 +126,12 @@ impl Typed2718 for InteropRootsEnvelope {
 
 impl RlpEcdsaEncodableTx for InteropRootsEnvelope {
     fn rlp_encoded_fields_length(&self) -> usize {
-        self.inner.rlp_encoded_fields_length()
+        self.inner.rlp_encoded_fields_length() + self.last_log_index.length()
     }
 
     fn rlp_encode_fields(&self, out: &mut dyn BufMut) {
         self.inner.rlp_encode_fields(out);
+        self.last_log_index.encode(out);
     }
 }
 
@@ -135,9 +140,10 @@ impl RlpEcdsaDecodableTx for InteropRootsEnvelope {
 
     fn rlp_decode_fields(buf: &mut &[u8]) -> alloy::rlp::Result<Self> {
         let transaction = InteropRootsTx::rlp_decode_fields(buf)?;
+        let last_log_index = <InteropRootsLogIndex as Decodable>::decode(buf)?;
         Ok(Self {
             hash: transaction.calculate_hash(),
-            last_log_index: InteropRootsLogIndex::default(),
+            last_log_index,
             inner: transaction,
         })
     }
@@ -146,20 +152,22 @@ impl RlpEcdsaDecodableTx for InteropRootsEnvelope {
 impl Encodable for InteropRootsEnvelope {
     fn encode(&self, out: &mut dyn BufMut) {
         self.inner.encode(out);
+        self.last_log_index.encode(out);
     }
 
     fn length(&self) -> usize {
-        self.inner.length()
+        self.inner.length() + self.last_log_index.length()
     }
 }
 
 impl Encodable2718 for InteropRootsEnvelope {
     fn encode_2718_len(&self) -> usize {
-        self.inner.encode_2718_len()
+        self.inner.encode_2718_len() + self.last_log_index.length()
     }
 
     fn encode_2718(&self, out: &mut dyn BufMut) {
         self.inner.encode_2718(out);
+        self.last_log_index.encode(out);
     }
 }
 
@@ -172,11 +180,13 @@ impl Decodable2718 for InteropRootsEnvelope {
         let transaction = InteropRootsTx::rlp_decode(buf)
             .map_err(|_| Eip2718Error::RlpError(alloy::rlp::Error::Custom("decode failed")))?;
 
+        let last_log_index = <InteropRootsLogIndex as Decodable>::decode(buf)?;
+
         let hash = transaction.calculate_hash();
 
         Ok(Self {
             hash,
-            last_log_index: InteropRootsLogIndex::default(),
+            last_log_index,
             inner: transaction,
         })
     }

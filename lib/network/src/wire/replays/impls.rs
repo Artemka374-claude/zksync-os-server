@@ -48,7 +48,7 @@ impl TryFrom<v0::ReplayRecord> for StorageReplayRecord {
             protocol_version: ProtocolSemanticVersion::new(0, 0, 0),
             block_output_hash: Default::default(),
             force_preimages: vec![],
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         })
     }
 }
@@ -150,7 +150,7 @@ impl TryFrom<v1::ReplayRecord> for StorageReplayRecord {
                 .into_iter()
                 .map(|p| (p.hash, p.preimage.into()))
                 .collect(),
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         })
     }
 }
@@ -206,7 +206,7 @@ impl From<StorageReplayRecord> for v2::ReplayRecord {
                     preimage: Bytes::from(preimage),
                 })
                 .collect(),
-            last_interop_event_index: value.last_interop_event_index,
+            next_interop_event_index: value.starting_interop_event_index,
         }
     }
 }
@@ -253,7 +253,7 @@ impl TryFrom<v2::ReplayRecord> for StorageReplayRecord {
                 .into_iter()
                 .map(|p| (p.hash, p.preimage.into()))
                 .collect(),
-            last_interop_event_index: value.last_interop_event_index,
+            starting_interop_event_index: value.next_interop_event_index,
         })
     }
 }

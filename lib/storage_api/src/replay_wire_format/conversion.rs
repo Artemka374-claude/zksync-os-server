@@ -58,7 +58,7 @@ impl From<ReplayWireFormatV1> for ReplayRecord {
             protocol_version: ProtocolSemanticVersion::legacy_genesis_version(), // We assume that old nodes won't have "newer" protocol versions.
             block_output_hash,
             force_preimages: vec![],
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         }
     }
 }
@@ -112,7 +112,7 @@ impl From<ReplayWireFormatV2> for ReplayRecord {
             protocol_version: ProtocolSemanticVersion::legacy_genesis_version(), // We assume that old nodes won't have "newer" protocol versions.
             block_output_hash,
             force_preimages: vec![],
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         }
     }
 }
@@ -164,7 +164,7 @@ impl From<ReplayWireFormatV3> for ReplayRecord {
             protocol_version: ProtocolSemanticVersion::legacy_genesis_version(), // We assume that old nodes won't have "newer" protocol versions.
             block_output_hash,
             force_preimages: vec![],
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         }
     }
 }
@@ -219,7 +219,7 @@ impl From<ReplayWireFormatV5> for ReplayRecord {
             protocol_version,
             block_output_hash,
             force_preimages,
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         }
     }
 }
@@ -272,7 +272,7 @@ impl From<ReplayWireFormatV4> for ReplayRecord {
             protocol_version: ProtocolSemanticVersion::legacy_genesis_version(), // We assume that old nodes won't have "newer" protocol versions.
             block_output_hash,
             force_preimages: vec![], // v4 didn't have force_preimages
-            last_interop_event_index: InteropRootsLogIndex::default(),
+            starting_interop_event_index: InteropRootsLogIndex::default(),
         }
     }
 }
@@ -288,7 +288,7 @@ impl From<ReplayWireFormatV6> for ReplayRecord {
             block_output_hash,
             protocol_version,
             force_preimages,
-            last_interop_event_index,
+            next_interop_event_index,
         } = value;
         let super::v6::BlockContext {
             chain_id,
@@ -328,7 +328,7 @@ impl From<ReplayWireFormatV6> for ReplayRecord {
             protocol_version,
             block_output_hash,
             force_preimages,
-            last_interop_event_index,
+            starting_interop_event_index: next_interop_event_index,
         }
     }
 }
@@ -344,7 +344,7 @@ impl From<ReplayRecord> for ReplayWireFormatV6 {
             block_output_hash,
             protocol_version,
             force_preimages,
-            last_interop_event_index,
+            starting_interop_event_index: next_interop_event_index,
         } = value;
         let BlockContext {
             chain_id,
@@ -384,7 +384,7 @@ impl From<ReplayRecord> for ReplayWireFormatV6 {
             block_output_hash,
             protocol_version,
             force_preimages,
-            last_interop_event_index,
+            next_interop_event_index,
         }
     }
 }
