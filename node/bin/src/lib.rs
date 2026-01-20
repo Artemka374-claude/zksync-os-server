@@ -436,10 +436,10 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         .as_ref()
         .map_or(0, |record| record.starting_l1_priority_id);
 
-    let last_interop_event_index = first_replay_record
+    let next_interop_event_index = first_replay_record
         .as_ref()
         .map_or(InteropRootsLogIndex::default(), |record| {
-            record.last_interop_event_index.clone()
+            record.starting_interop_event_index.clone()
         });
 
     tasks.spawn(
@@ -558,7 +558,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     // should be moved to `sequencer`
     let block_context_provider = BlockContextProvider::new(
         next_l1_priority_id,
-        last_interop_event_index,
+        next_interop_event_index,
         l1_transactions_for_sequencer,
         l1_upgrade_transactions_receiver,
         interop_transactions_receiver,

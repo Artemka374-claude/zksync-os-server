@@ -35,7 +35,7 @@ use zksync_os_types::{
 ///  this is easily fixable if needed.
 pub struct BlockContextProvider<Mempool> {
     next_l1_priority_id: u64,
-    last_interop_event_index: InteropRootsLogIndex,
+    next_interop_event_index: InteropRootsLogIndex,
     l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
     upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
     interop_transactions: mpsc::Receiver<InteropRootsEnvelope>,
@@ -63,7 +63,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         next_l1_priority_id: u64,
-        last_interop_event_index: InteropRootsLogIndex,
+        next_interop_event_index: InteropRootsLogIndex,
         l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
         upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
         interop_transactions: mpsc::Receiver<InteropRootsEnvelope>,
@@ -85,7 +85,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
     ) -> Self {
         Self {
             next_l1_priority_id,
-            last_interop_event_index,
+            next_interop_event_index,
             l1_transactions,
             upgrade_transactions,
             interop_transactions,
@@ -216,7 +216,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     expected_block_output_hash: None,
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages,
-                    last_interop_event_index: self.last_interop_event_index.clone(),
+                    starting_interop_event_index: self.next_interop_event_index.clone(),
                     is_interop_only_block,
                 }
             }
@@ -254,7 +254,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages: record.force_preimages,
                     is_interop_only_block,
-                    last_interop_event_index: record.last_interop_event_index.clone(),
+                    starting_interop_event_index: record.starting_interop_event_index.clone(),
                 }
             }
             BlockCommand::Rebuild(rebuild) => {
@@ -340,7 +340,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                     previous_block_timestamp: self.previous_block_timestamp,
                     force_preimages: rebuild.replay_record.force_preimages,
                     is_interop_only_block,
-                    last_interop_event_index: self.last_interop_event_index.clone(),
+                    starting_interop_event_index: self.next_interop_event_index.clone(),
                 }
             }
         };
@@ -362,6 +362,10 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         for tx in &replay_record.transactions {
             match tx.envelope() {
                 ZkEnvelope::InteropRoots(interop_tx) => {
+                    self.next_interop_event_index = InteropRootsLogIndex {
+                        block_number: interop_tx.last_log_index.block_number,
+                        index_in_block: interop_tx.last_log_index.index_in_block + 1,
+                    };
                     if matches!(
                         cmd_type,
                         BlockCommandType::Rebuild | BlockCommandType::Replay

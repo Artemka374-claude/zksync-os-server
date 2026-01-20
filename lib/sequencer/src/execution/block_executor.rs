@@ -65,7 +65,6 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
     };
     let mut deadline: Option<Pin<Box<Sleep>>> = None; // will arm after 1st tx success
     let mut interop_roots_count = 0;
-    let mut last_interop_event_index = command.last_interop_event_index;
 
     /* ---------- main loop ------------------------------------------ */
     // seal_reason must only be used for observability - handling must remain generic
@@ -129,11 +128,6 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
 
                                 if let ZkEnvelope::InteropRoots(interop_roots_tx) = tx.inner.inner() {
                                     interop_roots_count += interop_roots_tx.interop_roots_count();
-
-                                    // todo: not sure this should be the same way for rebuild.
-                                    if matches!(command.seal_policy, SealPolicy::Decide(..) | SealPolicy::UntilExhausted { allowed_to_finish_early: true }) {
-                                        last_interop_event_index = interop_roots_tx.last_log_index.clone();
-                                    }
                                 }
 
                                 let tx_type = tx.tx_type();
@@ -354,7 +348,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
             command.protocol_version,
             block_hash_output,
             command.force_preimages,
-            last_interop_event_index,
+            command.starting_interop_event_index,
         ),
         purged_txs,
     ))

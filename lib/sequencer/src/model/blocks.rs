@@ -111,7 +111,7 @@ pub struct PreparedBlockCommand<'a> {
     /// Contract preimages to be included before the block execution.
     /// Can be non-empty e.g. when processing upgrade transactions.
     pub force_preimages: Vec<(B256, Vec<u8>)>,
-    pub last_interop_event_index: InteropRootsLogIndex,
+    pub starting_interop_event_index: InteropRootsLogIndex,
     pub is_interop_only_block: bool,
 }
 

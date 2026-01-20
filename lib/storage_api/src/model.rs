@@ -63,7 +63,7 @@ impl ReplayRecord {
         protocol_version: ProtocolSemanticVersion,
         block_output_hash: B256,
         force_preimages: Vec<(B256, Vec<u8>)>,
-        last_interop_event_index: InteropRootsLogIndex,
+        starting_interop_event_index: InteropRootsLogIndex,
     ) -> Self {
         let first_l1_tx_priority_id = transactions.iter().find_map(|tx| match tx.envelope() {
             ZkEnvelope::InteropRoots(_) => None,
@@ -75,6 +75,22 @@ impl ReplayRecord {
             assert_eq!(
                 first_l1_tx_priority_id, starting_l1_priority_id,
                 "First L1 tx priority id must match next_l1_priority_id"
+            );
+        }
+
+        let first_interop_event_index = transactions.iter().find_map(|tx| match tx.envelope() {
+            ZkEnvelope::InteropRoots(interop_roots_tx) => {
+                Some(interop_roots_tx.last_log_index.clone())
+            }
+            ZkEnvelope::L1(_) => None,
+            ZkEnvelope::L2(_) => None,
+            ZkEnvelope::Upgrade(_) => None,
+        });
+
+        if let Some(first_interop_event_index) = first_interop_event_index {
+            assert_eq!(
+                first_interop_event_index, starting_interop_event_index,
+                "First interop event index must match starting_interop_event_index"
             );
         }
 
