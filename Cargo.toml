@@ -36,6 +36,7 @@ members = [
     "lib/external_price_api",
     "lib/base_token_adjuster",
     "lib/reth_compat",
+    "lib/interop_watcher",
 ]
 resolver = "3"
 default-members = ["node/bin"]
@@ -247,6 +248,7 @@ zksync_os_metadata = { version = "=0.13.0-non-semver-compat", path = "lib/metada
 zksync_os_external_price_api = { version = "=0.13.0-non-semver-compat", path = "lib/external_price_api" }
 zksync_os_base_token_adjuster = { version = "=0.13.0-non-semver-compat", path = "lib/base_token_adjuster" }
 zksync_os_reth_compat = { version = "=0.13.0-non-semver-compat", path = "lib/reth_compat" }
+zksync_os_interop_watcher = { version = "=0.13.0-non-semver-compat", path = "lib/interop_watcher" }
 
 zksync_os_server = { version = "=0.13.0-non-semver-compat", path = "node/bin" }
 

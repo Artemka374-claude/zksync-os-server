@@ -15191,6 +15191,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zksync_os_interop_watcher"
+version = "0.13.0-non-semver-compat"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "tokio",
+ "tracing",
+ "zksync_os_contract_interface",
+ "zksync_os_types",
+]
+
+[[package]]
 name = "zksync_os_l1_sender"
 version = "0.13.0-non-semver-compat"
 dependencies = [

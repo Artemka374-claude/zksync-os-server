@@ -344,6 +344,14 @@ impl<P: Provider + Clone> Bridgehub<P> {
         }
     }
 
+    pub fn provider(&self) -> &P {
+        self.instance.provider()
+    }
+
+    pub async fn message_root(&self) -> alloy::contract::Result<Address> {
+        self.instance.messageRoot().call().await
+    }
+
     pub fn address(&self) -> &Address {
         self.instance.address()
     }
