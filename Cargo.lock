@@ -14957,6 +14957,7 @@ name = "zksync_os_batch_types"
 version = "0.13.0-non-semver-compat"
 dependencies = [
  "alloy",
+ "anyhow",
  "basic_system 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.1.0-rc1)",
  "basic_system 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.2.5)",
  "blake2 0.10.6",
@@ -14969,6 +14970,7 @@ dependencies = [
  "zksync_os_interface",
  "zksync_os_merkle_tree",
  "zksync_os_mini_merkle_tree",
+ "zksync_os_storage_api",
  "zksync_os_types",
 ]
 

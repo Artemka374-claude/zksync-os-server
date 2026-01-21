@@ -847,6 +847,7 @@ async fn run_main_node_pipeline(
             pubdata_mode: config.l1_sender_config.pubdata_mode,
             sidecar_sender,
             committed_batch_provider,
+            read_state: state.clone(),
         })
         .pipe(BatchVerificationPipelineStep::new(
             config.batch_verification_config.into(),
@@ -965,6 +966,7 @@ async fn run_en_pipeline(
                 config.batch_verification_config.signing_key.clone(),
                 finality.clone(),
                 node_state_on_startup.l1_state.clone(),
+                state.clone(),
             ),
             NoOpSink::new(),
         )

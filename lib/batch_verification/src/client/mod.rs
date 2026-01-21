@@ -27,8 +27,8 @@ use zksync_os_observability::ComponentStateReporter;
 use zksync_os_observability::GenericComponentState;
 use zksync_os_observability::StateLabel;
 use zksync_os_pipeline::{PeekableReceiver, PipelineComponent};
-use zksync_os_storage_api::ReadFinality;
 use zksync_os_storage_api::ReplayRecord;
+use zksync_os_storage_api::{ReadFinality, ReadStateHistory};
 
 mod block_cache;
 mod metrics;
@@ -36,13 +36,14 @@ mod metrics;
 use block_cache::BlockCache;
 
 /// Client that connects to the main sequencer for batch verification
-pub struct BatchVerificationClient<Finality> {
+pub struct BatchVerificationClient<Finality, ReadState> {
     chain_id: u64,
     diamond_proxy_sl: Address,
     server_address: String,
     l1_state: L1State,
     signer: PrivateKeySigner,
     block_cache: BlockCache<Finality, (BlockOutput, ReplayRecord, BlockMerkleTreeData)>,
+    read_state: ReadState,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -53,15 +54,15 @@ enum BatchVerificationError {
     TreeError,
     #[error("Batch data mismatch: {0}")]
     BatchDataMismatch(String),
+    #[error("Failed to create batch info: {0}")]
+    BatchInfo(anyhow::Error),
 }
 
-type VerificationInput = (
-    BlockOutput,
-    zksync_os_storage_api::ReplayRecord,
-    BlockMerkleTreeData,
-);
+type VerificationInput = (BlockOutput, ReplayRecord, BlockMerkleTreeData);
 
-impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
+impl<Finality: ReadFinality, ReadState: ReadStateHistory>
+    BatchVerificationClient<Finality, ReadState>
+{
     pub fn new(
         chain_id: u64,
         diamond_proxy_sl: Address,
@@ -69,6 +70,7 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
         private_key: SecretString,
         finality: Finality,
         l1_state: L1State,
+        read_state: ReadState,
     ) -> Self {
         let signer = PrivateKeySigner::from_str(private_key.expose_secret())
             .expect("Invalid batch verification private key");
@@ -88,6 +90,7 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
             l1_state,
             signer,
             block_cache: BlockCache::new(finality),
+            read_state,
         }
     }
 
@@ -231,7 +234,9 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
             self.diamond_proxy_sl,
             request.batch_number,
             request.pubdata_mode,
-        );
+            &self.read_state,
+        )
+        .map_err(BatchVerificationError::BatchInfo)?;
 
         if batch_info.commit_info != request.commit_data {
             let diff = request.commit_data.diff(&batch_info.commit_info);
@@ -289,7 +294,9 @@ impl StateLabel for BatchVerificationClientState {
 }
 
 #[async_trait]
-impl<Finality: ReadFinality> PipelineComponent for BatchVerificationClient<Finality> {
+impl<Finality: ReadFinality, ReadState: ReadStateHistory> PipelineComponent
+    for BatchVerificationClient<Finality, ReadState>
+{
     type Input = VerificationInput;
     type Output = ();
 

@@ -6,12 +6,11 @@ use zksync_os_l1_sender::batcher_metrics::BatchExecutionStage;
 use zksync_os_l1_sender::batcher_model::{
     BatchEnvelope, BatchForSigning, BatchMetadata, ProverInput,
 };
-use zksync_os_storage_api::ReplayRecord;
+use zksync_os_storage_api::{ReadStateHistory, ReplayRecord};
 use zksync_os_types::{ProvingVersion, PubdataMode};
 
 /// Takes a vector of blocks and produces a batch envelope.
-/// This is a pure function that is meant to be stateless and not contained in the `Batcher` struct.
-pub(crate) fn seal_batch(
+pub(crate) fn seal_batch<ReadState: ReadStateHistory>(
     blocks: &[(
         BlockOutput,
         ReplayRecord,
@@ -23,6 +22,7 @@ pub(crate) fn seal_batch(
     chain_id: u64,
     chain_address_sl: Address,
     pubdata_mode: PubdataMode,
+    read_state: &ReadState,
 ) -> anyhow::Result<BatchForSigning<ProverInput>> {
     let block_number_from = blocks.first().unwrap().1.block_context.block_number;
     let block_number_to = blocks.last().unwrap().1.block_context.block_number;
@@ -44,7 +44,8 @@ pub(crate) fn seal_batch(
         chain_address_sl,
         batch_number,
         pubdata_mode,
-    );
+        read_state,
+    )?;
 
     use zk_os_forward_system::run::generate_batch_proof_input;
 
