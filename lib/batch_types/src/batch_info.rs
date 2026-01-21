@@ -362,8 +362,8 @@ fn n_dim_array_key_in_layout(array_key: B256, indices: &[B256]) -> B256 {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::b256;
     use super::*;
+    use alloy::primitives::b256;
 
     #[test]
     fn test_calculate_multichain_root_slot_tree_height_4() {
