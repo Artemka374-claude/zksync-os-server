@@ -9,7 +9,6 @@ use alloy::rpc::types::{AccessList, SignedAuthorization};
 use alloy::sol_types::SolCall;
 use alloy_rlp::{BufMut, Decodable, Encodable};
 use serde::{Deserialize, Serialize};
-use zksync_os_contract_interface::IMessageRoot::addInteropRootCall;
 use zksync_os_contract_interface::{IMessageRoot::addInteropRootsInBatchCall, InteropRoot};
 
 pub mod tx;
@@ -28,7 +27,6 @@ pub struct InteropRootsEnvelope {
     #[serde(skip)]
     pub hash: B256,
     /// Log index of the last event from which the transaction was created.
-    /// In case we use demo-version, it is the index of the only one event in transaction.
     /// Stored in an envelope to be able to easier keep track of it, but it is not part of the transaction
     #[serde(skip)]
     pub last_log_index: InteropRootsLogIndex,
@@ -69,25 +67,17 @@ impl InteropRootsEnvelope {
     pub fn from_interop_roots(
         interop_roots: Vec<InteropRoot>,
         last_log_index: InteropRootsLogIndex,
-        is_gateway: bool,
     ) -> Self {
-        let calldata = if is_gateway {
-            addInteropRootsInBatchCall {
-                interopRootsInput: interop_roots,
-            }
-            .abi_encode()
-        } else {
-            // interop roots amount should be 1 for non-gateway transactions
-            assert_eq!(interop_roots.len(), 1);
-            let interop_root = interop_roots[0].clone();
+        assert_eq!(
+            interop_roots.len(),
+            1,
+            "Sequencer doesn't support multiple interop roots in single transaction yet"
+        );
 
-            addInteropRootCall {
-                chainId: interop_root.chainId,
-                blockOrBatchNumber: interop_root.blockOrBatchNumber,
-                sides: interop_root.sides,
-            }
-            .abi_encode()
-        };
+        let calldata = addInteropRootsInBatchCall {
+            interopRootsInput: interop_roots,
+        }
+        .abi_encode();
 
         let transaction = InteropRootsTx {
             to: L2_INTEROP_ROOT_STORAGE_ZKSYNC_OS_ADDRESS,
@@ -102,15 +92,15 @@ impl InteropRootsEnvelope {
     }
 
     pub fn interop_roots_count(&self) -> u64 {
-        if let Ok(interop_roots) = addInteropRootsInBatchCall::abi_decode(&self.inner.input) {
-            interop_roots.interopRootsInput.len() as u64
-        } else {
-            let interop_root = addInteropRootCall::abi_decode(&self.inner.input)
-                .expect("Failed to decode interop root calldata");
-            // todo: should be 1 if i remember correctly
-            assert_eq!(interop_root.sides.len(), 1);
-            1
-        }
+        let interop_roots_count = addInteropRootsInBatchCall::abi_decode(&self.inner.input)
+            .expect("Failed to decode interop roots calldata")
+            .interopRootsInput
+            .len() as u64;
+        assert_eq!(
+            interop_roots_count, 1,
+            "Sequencer doesn't support multiple interop roots in single transaction yet"
+        );
+        interop_roots_count
     }
 
     pub fn hash(&self) -> &B256 {
