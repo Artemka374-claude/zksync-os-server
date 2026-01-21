@@ -88,8 +88,11 @@ impl Stream for BestTransactionsStream<'_> {
                     Poll::Ready(Some(tx)) => {
                         return Poll::Ready(Some(ZkTransaction::from(tx)));
                     }
-                    Poll::Pending => return Poll::Pending,
+                    Poll::Pending if this.first_tx_is_interop => {
+                        return Poll::Pending;
+                    }
                     Poll::Ready(None) => todo!("channel closed"),
+                    _ => {}
                 }
             }
 
