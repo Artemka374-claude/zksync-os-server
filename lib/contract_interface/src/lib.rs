@@ -365,6 +365,14 @@ impl<P: Provider + Clone> Bridgehub<P> {
         self.instance.address()
     }
 
+    pub fn provider(&self) -> &P {
+        self.instance.provider()
+    }
+
+    pub async fn message_root_address(&self) -> alloy::contract::Result<Address> {
+        self.instance.messageRoot().call().await
+    }
+
     pub async fn chain_type_manager_address(&self) -> alloy::contract::Result<Address> {
         self.instance
             .chainTypeManager(U256::from(self.l2_chain_id))

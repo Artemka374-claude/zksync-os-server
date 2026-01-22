@@ -67,6 +67,7 @@ use zksync_os_l1_sender::commands::commit::CommitCommand;
 use zksync_os_l1_sender::commands::prove::ProofCommand;
 use zksync_os_l1_sender::pipeline_component::L1Sender;
 use zksync_os_l1_sender::upgrade_gatekeeper::UpgradeGatekeeper;
+use zksync_os_l1_watcher::InteropWatcher;
 use zksync_os_l1_watcher::{
     CommittedBatchProvider, L1CommitWatcher, L1ExecuteWatcher, L1TxWatcher, L1UpgradeTxWatcher,
 };
@@ -176,7 +177,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
 
     // Channel between InteropRootsWatcher and Sequencer
     // todo: implement InteropRootsWatcher
-    let (_interop_transactions_sender, interop_transactions_receiver) =
+    let (interop_transactions_sender, interop_transactions_receiver) =
         tokio::sync::mpsc::channel(5);
 
     // Channel between L1UpgradeWatcher and Sequencer
@@ -429,6 +430,19 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         .map_or(InteropRootsLogIndex::default(), |record| {
             record.starting_interop_event_index.clone()
         });
+
+    tasks.spawn(
+        InteropWatcher::create_watcher(
+            node_startup_state.l1_state.bridgehub.clone(),
+            config.l1_watcher_config.clone().into(),
+            interop_transactions_sender,
+            next_interop_event_index.clone(),
+        )
+        .await
+        .expect("failed to start L1 interop roots watcher")
+        .run()
+        .map(report_exit("L1 interop roots watcher")),
+    );
 
     tasks.spawn(
         L1TxWatcher::create_watcher(
