@@ -23,7 +23,7 @@ pub trait TxStream: Stream {
 pub struct BestTransactionsStream<'a> {
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
-    interop_transactions: &'a mut mpsc::Receiver<IndexedInteropRoot>,
+    interop_roots: &'a mut mpsc::Receiver<IndexedInteropRoot>,
     pending_transactions_listener: mpsc::Receiver<TxHash>,
     best_l2_transactions:
         Box<dyn BestTransactions<Item = Arc<ValidPoolTransaction<L2PooledTransaction>>>>,
@@ -149,14 +149,14 @@ impl From<IndexedInteropRootsEnvelope> for ZkPoolTransaction {
 pub fn best_transactions<'a>(
     l2_mempool: &impl L2TransactionPool,
     l1_transactions: &'a mut mpsc::Receiver<L1PriorityEnvelope>,
-    interop_transactions: &'a mut mpsc::Receiver<IndexedInteropRoot>,
+    interop_roots: &'a mut mpsc::Receiver<IndexedInteropRoot>,
     pending_upgrade_transactions: &'a mut mpsc::Receiver<UpgradeTransaction>,
 ) -> BestTransactionsStream<'a> {
     let pending_transactions_listener =
         l2_mempool.pending_transactions_listener_for(TransactionListenerKind::All);
     BestTransactionsStream {
         l1_transactions,
-        interop_transactions,
+        interop_roots,
         pending_upgrade_transactions,
         pending_transactions_listener,
         best_l2_transactions: l2_mempool.best_transactions(),
@@ -199,7 +199,7 @@ impl Stream for BestTransactionsStream<'_> {
             }
 
             if !this.txs_already_provided || this.provide_only_interop_txs {
-                match this.interop_transactions.poll_recv(cx) {
+                match this.interop_roots.poll_recv(cx) {
                     Poll::Ready(Some(tx)) => {
                         // If first transaction in stream was interop one we should provide only interop transactions
                         this.provide_only_interop_txs = true;
