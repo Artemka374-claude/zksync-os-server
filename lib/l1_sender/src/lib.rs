@@ -166,14 +166,21 @@ pub async fn run_l1_sender<Input: SendToL1>(
                         // Convert the envelope into an EIP-7594 transaction by converting the sidecar
                         envelope.try_map_eip4844(|tx| {
                             tx.try_map_sidecar(|sidecar| {
-                                Ok::<_, BlobTransactionValidationError>(
-                                    BlobTransactionSidecarVariant::Eip7594(sidecar.try_into_7594(EnvKzgSettings::Default.get())?)
-                                )
+                                Ok::<_, BlobTransactionValidationError>(match sidecar {
+                                    BlobTransactionSidecarVariant::Eip4844(sidecar) => {
+                                        BlobTransactionSidecarVariant::Eip7594(
+                                            sidecar.try_into_7594(EnvKzgSettings::Default.get())?,
+                                        )
+                                    }
+                                    BlobTransactionSidecarVariant::Eip7594(sidecar) => {
+                                        BlobTransactionSidecarVariant::Eip7594(sidecar)
+                                    }
+                                })
                             })
                         })?
                     } else {
                         // Keep the regular EIP-4844 sidecar
-                        envelope.map_eip4844(|tx| tx.map_sidecar(BlobTransactionSidecarVariant::Eip4844))
+                        envelope
                     };
 
                     // We don't wait for receipt here, instead we register an alloy watcher that
