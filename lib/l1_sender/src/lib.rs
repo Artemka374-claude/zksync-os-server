@@ -179,8 +179,14 @@ pub async fn run_l1_sender<Input: SendToL1>(
                             })
                         })?
                     } else {
-                        // Keep the regular EIP-4844 sidecar
-                        envelope
+                        envelope.map_eip4844(|tx| {
+                            tx.map_sidecar(|sidecar| match sidecar {
+                                BlobTransactionSidecarVariant::Eip4844(sidecar) => BlobTransactionSidecarVariant::Eip4844(sidecar),
+                                BlobTransactionSidecarVariant::Eip7594(_) => {
+                                    unreachable!("EIP-7594 sidecar before Fusaka gate")
+                                }
+                            })
+                        })
                     };
 
                     // We don't wait for receipt here, instead we register an alloy watcher that
