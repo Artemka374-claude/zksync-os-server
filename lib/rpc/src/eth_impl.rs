@@ -684,7 +684,11 @@ impl<RpcStorage: ReadRpcStorage, Mempool: L2TransactionPool> EthApiServer
         self.gas_price_impl().to_rpc_result()
     }
 
-    async fn get_account(&self, _address: Address, _block: BlockId) -> RpcResult<Option<TrieAccount>> {
+    async fn get_account(
+        &self,
+        _address: Address,
+        _block: BlockId,
+    ) -> RpcResult<Option<TrieAccount>> {
         // todo(#36): implement
         Err(unimplemented_rpc_err())
     }

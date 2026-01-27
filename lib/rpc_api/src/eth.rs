@@ -257,7 +257,8 @@ pub trait EthApi {
 
     /// Returns the account details by specifying an address and a block number/tag
     #[method(name = "getAccount")]
-    async fn get_account(&self, address: Address, block: BlockId) -> RpcResult<Option<TrieAccount>>;
+    async fn get_account(&self, address: Address, block: BlockId)
+    -> RpcResult<Option<TrieAccount>>;
 
     /// Introduced in EIP-1559, returns suggestion for the priority for dynamic fee transactions.
     #[method(name = "maxPriorityFeePerGas")]
