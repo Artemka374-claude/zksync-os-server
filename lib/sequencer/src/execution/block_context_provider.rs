@@ -13,13 +13,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
 use zksync_os_interface::types::{BlockContext, BlockHashes};
 use zksync_os_mempool::{
-    CanonicalStateUpdate, L2TransactionPool, PoolUpdateKind, ReplayTxStream, best_transactions,
+    CanonicalStateUpdate, InteropTxStream, L2TransactionPool, PoolUpdateKind, ReplayTxStream,
+    best_transactions,
 };
 use zksync_os_storage_api::ReplayRecord;
 use zksync_os_types::{
-    ExecutionVersion, IndexedInteropRoot, IndexedInteropRootsEnvelope, InteropRootsEnvelope,
-    InteropRootsLogIndex, L1PriorityEnvelope, L2Envelope, ProtocolSemanticVersion,
-    UpgradeTransaction, ZkEnvelope,
+    ExecutionVersion, InteropRootsLogIndex, L1PriorityEnvelope, L2Envelope,
+    ProtocolSemanticVersion, UpgradeTransaction, ZkEnvelope,
 };
 
 /// Component that turns `BlockCommand`s into `PreparedBlockCommand`s.
@@ -37,7 +37,7 @@ pub struct BlockContextProvider<Mempool> {
     next_interop_event_index: InteropRootsLogIndex,
     l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
     upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
-    interop_roots: mpsc::Receiver<IndexedInteropRoot>,
+    interop_tx_stream: InteropTxStream,
     l2_mempool: Mempool,
     block_hashes_for_next_block: BlockHashes,
     previous_block_timestamp: u64,
@@ -59,7 +59,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         next_interop_event_index: InteropRootsLogIndex,
         l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
         upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
-        interop_roots: mpsc::Receiver<IndexedInteropRoot>,
+        interop_tx_stream: InteropTxStream,
         l2_mempool: Mempool,
         block_hashes_for_next_block: BlockHashes,
         previous_block_timestamp: u64,
@@ -76,7 +76,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             next_interop_event_index,
             l1_transactions,
             upgrade_transactions,
-            interop_roots,
+            interop_tx_stream,
             l2_mempool,
             block_hashes_for_next_block,
             previous_block_timestamp,
@@ -102,7 +102,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                 let mut best_txs = best_transactions(
                     &self.l2_mempool,
                     &mut self.l1_transactions,
-                    &mut self.interop_roots,
+                    Box::pin(&mut self.interop_tx_stream),
                     &mut self.upgrade_transactions,
                 );
 
@@ -315,39 +315,12 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         cmd_type: BlockCommandType,
     ) {
         let mut l2_transactions = Vec::new();
+        let mut interop_txs = Vec::new();
         for tx in &replay_record.transactions {
             match tx.envelope() {
                 ZkEnvelope::InteropRoots(interop_tx) => match cmd_type {
                     BlockCommandType::Replay | BlockCommandType::Rebuild => {
-                        // Since transaction can contain multiple interop roots, we need to fetch all of them
-                        let mut interop_roots = Vec::new();
-
-                        for _ in 0..interop_tx.interop_roots_count() {
-                            let indexed_interop_root = self
-                                .interop_roots
-                                .recv()
-                                .await
-                                .expect("Failed to receive interop root");
-                            interop_roots.push(indexed_interop_root);
-                        }
-
-                        let indexed_interop_tx: IndexedInteropRootsEnvelope =
-                            IndexedInteropRootsEnvelope {
-                                log_index: interop_roots.last().unwrap().log_index.clone(),
-                                envelope: InteropRootsEnvelope::from_interop_roots(
-                                    interop_roots.iter().map(|r| r.root.clone()).collect(),
-                                ),
-                            };
-
-                        // If block is being replayed we must fetch equivalent interop roots(in same order) from SL
-                        assert_eq!(&indexed_interop_tx.envelope, interop_tx);
-                        // We use its `log_index` to update `next_interop_event_index`.
-                        // NOTE: `block_output.last_interop_log_index` (see usage below) is empty
-                        //       for replay blocks
-                        self.next_interop_event_index = InteropRootsLogIndex {
-                            block_number: indexed_interop_tx.log_index.block_number,
-                            index_in_block: indexed_interop_tx.log_index.index_in_block + 1,
-                        };
+                        interop_txs.push(interop_tx.clone());
                     }
                     BlockCommandType::Produce => {}
                 },
@@ -382,14 +355,17 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             }
         }
 
-        // NOTE: `block_output.last_interop_log_index` is empty for replay blocks, instead
-        //       `next_interop_event_index` is updated via watcher logic above
-        if let Some(last_interop_log_index) = &block_output.last_interop_log_index {
+        if let Some(last_interop_log_index) = self
+            .interop_tx_stream
+            .on_canonical_state_change(interop_txs)
+            .await
+        {
             self.next_interop_event_index = InteropRootsLogIndex {
                 block_number: last_interop_log_index.block_number,
                 index_in_block: last_interop_log_index.index_in_block + 1,
             };
         }
+
         EXECUTION_METRICS
             .next_l1_priority_id
             .set(self.next_l1_priority_id);

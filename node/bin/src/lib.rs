@@ -71,7 +71,7 @@ use zksync_os_l1_watcher::InteropWatcher;
 use zksync_os_l1_watcher::{
     CommittedBatchProvider, L1CommitWatcher, L1ExecuteWatcher, L1TxWatcher, L1UpgradeTxWatcher,
 };
-use zksync_os_mempool::L2TransactionPool;
+use zksync_os_mempool::{InteropTxStream, L2TransactionPool};
 use zksync_os_merkle_tree::{MerkleTree, MerkleTreeVersion, RocksDBWrapper};
 use zksync_os_metadata::NODE_VERSION;
 use zksync_os_network::service::NetworkService;
@@ -177,8 +177,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     let (l1_transactions_sender, l1_transactions_for_sequencer) = tokio::sync::mpsc::channel(5);
 
     // Channel between InteropWatcher and Sequencer
-    let (interop_transactions_sender, interop_transactions_receiver) =
-        tokio::sync::mpsc::channel(5);
+    let (interop_roots_sender, interop_roots_receiver) = tokio::sync::mpsc::channel(5);
 
     // Channel between L1UpgradeWatcher and Sequencer
     let (l1_upgrade_transactions_sender, l1_upgrade_transactions_receiver) =
@@ -442,7 +441,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             InteropWatcher::create_watcher(
                 node_startup_state.l1_state.bridgehub.clone(),
                 config.l1_watcher_config.clone().into(),
-                interop_transactions_sender,
+                interop_roots_sender,
                 next_interop_event_index.clone(),
             )
             .await
@@ -557,7 +556,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         next_interop_event_index,
         l1_transactions_for_sequencer,
         l1_upgrade_transactions_receiver,
-        interop_transactions_receiver,
+        InteropTxStream::new(interop_roots_receiver),
         l2_mempool.clone(),
         block_hashes_for_next_block,
         previous_block_timestamp,

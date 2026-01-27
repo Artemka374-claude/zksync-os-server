@@ -13,6 +13,9 @@ pub use transaction::L2PooledTransaction;
 mod config;
 pub use config::TxValidatorConfig;
 
+mod interop_tx_stream;
+pub use interop_tx_stream::InteropTxStream;
+
 mod metrics;
 
 // Re-export some of the reth mempool's types.
