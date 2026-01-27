@@ -1,4 +1,3 @@
-use crate::execution::block_executor::BlockOutputExt;
 use crate::execution::fee_provider::{FeeParams, FeeProvider};
 use crate::execution::metrics::EXECUTION_METRICS;
 use crate::model::blocks::{
@@ -11,7 +10,7 @@ use reth_execution_types::ChangedAccount;
 use reth_primitives::SealedBlock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
-use zksync_os_interface::types::{BlockContext, BlockHashes};
+use zksync_os_interface::types::{BlockContext, BlockHashes, BlockOutput};
 use zksync_os_mempool::{
     CanonicalStateUpdate, InteropTxStream, L2TransactionPool, PoolUpdateKind, ReplayTxStream,
     best_transactions,
@@ -310,7 +309,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
 
     pub async fn on_canonical_state_change(
         &mut self,
-        block_output: &BlockOutputExt,
+        block_output: &BlockOutput,
         replay_record: &ReplayRecord,
         cmd_type: BlockCommandType,
     ) {
