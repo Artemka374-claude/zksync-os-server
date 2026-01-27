@@ -31,7 +31,6 @@ members = [
     "lib/batch_types",
     "lib/socket",
     "lib/internal_config",
-    "lib/integration_tests_wrapper",
     "lib/network",
     "lib/metadata",
     "lib/external_price_api",
