@@ -83,7 +83,7 @@ impl InteropTxStream {
                 .collect::<Vec<_>>();
 
             let tx = IndexedInteropRootsEnvelope {
-                log_index: self.pending_roots.back().unwrap().log_index.clone(),
+                log_index: roots_to_consume.last().unwrap().log_index.clone(),
                 envelope: InteropRootsEnvelope::from_interop_roots(
                     roots_to_consume.iter().map(|r| r.root.clone()).collect(),
                 ),
