@@ -6,9 +6,7 @@ use std::{
 
 use futures::Stream;
 use tokio::sync::mpsc;
-use zksync_os_types::{
-    IndexedInteropRoot, IndexedInteropRootsEnvelope, InteropRootsEnvelope, InteropRootsLogIndex,
-};
+use zksync_os_types::{IndexedInteropRoot, IndexedInteropRootsEnvelope, InteropRootsEnvelope};
 
 /// Stream that accumulates interop roots and produces interop transactions
 /// It also keeps track of sent roots to be able to return them back to stream
@@ -83,7 +81,7 @@ impl InteropTxStream {
                 .collect::<Vec<_>>();
 
             let tx = IndexedInteropRootsEnvelope {
-                log_index: roots_to_consume.last().unwrap().log_index.clone(),
+                log_id: roots_to_consume.last().unwrap().log_id,
                 envelope: InteropRootsEnvelope::from_interop_roots(
                     roots_to_consume.iter().map(|r| r.root.clone()).collect(),
                 ),
@@ -114,8 +112,8 @@ impl InteropTxStream {
     pub async fn on_canonical_state_change(
         &mut self,
         txs: Vec<InteropRootsEnvelope>,
-    ) -> Option<InteropRootsLogIndex> {
-        let mut log_index = None;
+    ) -> Option<u64> {
+        let mut log_id = None;
         for tx in txs {
             let mut roots = Vec::new();
             for _ in 0..tx.interop_roots_count() {
@@ -125,7 +123,7 @@ impl InteropTxStream {
             let envelope = InteropRootsEnvelope::from_interop_roots(
                 roots.iter().map(|r| r.root.clone()).collect(),
             );
-            log_index = Some(roots.last().unwrap().log_index.clone());
+            log_id = Some(roots.last().unwrap().log_id);
 
             assert_eq!(&envelope, &tx);
         }
@@ -138,6 +136,6 @@ impl InteropTxStream {
         // Clear used roots that were left in the buffer and move them to pending.
         std::mem::swap(&mut self.pending_roots, &mut self.used_roots);
 
-        log_index
+        log_id
     }
 }

@@ -17,8 +17,8 @@ use zksync_os_mempool::{
 };
 use zksync_os_storage_api::ReplayRecord;
 use zksync_os_types::{
-    ExecutionVersion, InteropRootsLogIndex, L1PriorityEnvelope, L2Envelope,
-    ProtocolSemanticVersion, UpgradeTransaction, ZkEnvelope,
+    ExecutionVersion, L1PriorityEnvelope, L2Envelope, ProtocolSemanticVersion, UpgradeTransaction,
+    ZkEnvelope,
 };
 
 /// Component that turns `BlockCommand`s into `PreparedBlockCommand`s.
@@ -357,15 +357,12 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             }
         }
 
-        if let Some(last_interop_log_index) = self
+        if let Some(last_interop_root_id) = self
             .interop_tx_stream
             .on_canonical_state_change(interop_txs)
             .await
         {
-            self.next_interop_event_index = InteropRootsLogIndex {
-                block_number: last_interop_log_index.block_number,
-                index_in_block: last_interop_log_index.index_in_block + 1,
-            };
+            self.next_interop_root_id = last_interop_root_id + 1;
         }
         EXECUTION_METRICS
             .next_l1_priority_id

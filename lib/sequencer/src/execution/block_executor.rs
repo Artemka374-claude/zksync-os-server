@@ -17,7 +17,7 @@ use zksync_os_storage_api::{
     MeteredViewState, OverriddenStateView, ReadStateHistory, ReplayRecord, WriteState,
 };
 use zksync_os_types::{ZkEnvelope, ZkTransaction, ZkTxType, ZksyncOsEncode};
-use zksync_os_types::{ZkEnvelope, ZkTransaction, ZkTxType, ZksyncOsEncode};
+
 // Note that this is a pure function without a container struct (e.g. `struct BlockExecutor`)
 // MAINTAIN this to ensure the function is completely stateless - explicit or implicit.
 

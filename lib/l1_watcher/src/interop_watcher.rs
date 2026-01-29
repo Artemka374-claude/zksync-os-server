@@ -7,14 +7,14 @@ use alloy::{primitives::Address, providers::DynProvider};
 use tokio::sync::mpsc;
 use zksync_os_contract_interface::IMessageRoot::NewInteropRoot;
 use zksync_os_contract_interface::{Bridgehub, InteropRoot, MessageRoot};
-use zksync_os_types::{IndexedInteropRootsEnvelope, InteropRootsEnvelope};
+use zksync_os_types::IndexedInteropRoot;
 
 use crate::watcher::{L1Watcher, L1WatcherError};
 use crate::{L1WatcherConfig, ProcessL1Event};
 
 pub struct InteropWatcher {
     contract_address: Address,
-    output: mpsc::Sender<IndexedInteropRootsEnvelope>,
+    output: mpsc::Sender<IndexedInteropRoot>,
     starting_interop_root_id: u64,
 }
 
@@ -22,7 +22,7 @@ impl InteropWatcher {
     pub async fn create_watcher(
         bridgehub: Bridgehub<DynProvider>,
         config: L1WatcherConfig,
-        output: mpsc::Sender<IndexedInteropRootsEnvelope>,
+        output: mpsc::Sender<IndexedInteropRoot>,
         starting_interop_root_id: u64,
     ) -> anyhow::Result<L1Watcher> {
         let contract_address = bridgehub.message_root_address().await?;
@@ -136,14 +136,9 @@ impl ProcessL1Event for InteropWatcher {
             sides: tx.sides.clone(),
         };
 
-        let indexed_envelope = IndexedInteropRootsEnvelope {
-            log_id: tx.logId.try_into().unwrap(),
-            envelope: InteropRootsEnvelope::from_interop_roots(vec![interop_root]),
-        };
-
         self.output
             .send(IndexedInteropRoot {
-                log_index: current_log_index,
+                log_id: tx.logId.try_into().unwrap(),
                 root: interop_root,
             })
             .await
