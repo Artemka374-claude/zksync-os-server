@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, ready};
 use tokio::time::Instant;
 use tokio::{
     sync::broadcast::{self},
@@ -71,9 +71,7 @@ impl Stream for InteropTransactions {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(sleep) = self.sleep.as_mut() {
-            if sleep.as_mut().poll(cx).is_pending() {
-                return Poll::Pending;
-            }
+            ready!(sleep.as_mut().poll(cx));
             self.sleep = None;
         }
 
@@ -143,11 +141,7 @@ impl InteropTxPoolInner {
     }
 
     pub fn add_root(&mut self, root: IndexedInteropRoot) {
-        if self.sender.receiver_count() > 0 {
-            self.sender
-                .send(root.root.clone())
-                .expect("Failed to send root");
-        }
+        let _ = self.sender.send(root.root.clone());
         self.pending_roots.push_front(root);
     }
 
