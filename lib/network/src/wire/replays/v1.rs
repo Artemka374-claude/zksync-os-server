@@ -6,7 +6,7 @@
 
 use crate::wire::{BlockHashes, ForcedPreimage};
 use alloy::primitives::{Address, B256, U256};
-use alloy_rlp::{BufMut, Decodable, Encodable, RlpDecodable, RlpEncodable};
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use zksync_os_types::{L1TxSerialId, ProtocolSemanticVersion, ZkEnvelope};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]
@@ -18,7 +18,7 @@ pub struct ReplayRecord {
     pub protocol_version: ProtocolSemanticVersion,
     pub block_output_hash: B256,
     pub force_preimages: Vec<ForcedPreimage>,
-    pub starting_interop_event_index: InteropRootsLogIndex,
+    pub starting_interop_root_id: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]
@@ -36,33 +36,4 @@ pub struct BlockContext {
     pub mix_hash: U256,
     pub execution_version: u32,
     pub blob_fee: U256,
-}
-
-/// A helper struct to store the block number and index in block of published interop roots event.
-#[derive(Default, Debug, Clone, Hash, Eq, PartialEq, PartialOrd)]
-pub struct InteropRootsLogIndex {
-    /// Block number from which event was published.
-    pub block_number: u64,
-    /// Index of the event in the block.
-    pub index_in_block: u64,
-}
-
-impl Encodable for InteropRootsLogIndex {
-    fn encode(&self, out: &mut dyn BufMut) {
-        self.block_number.encode(out);
-        self.index_in_block.encode(out);
-    }
-
-    fn length(&self) -> usize {
-        self.block_number.length() + self.index_in_block.length()
-    }
-}
-
-impl Decodable for InteropRootsLogIndex {
-    fn decode(buf: &mut &[u8]) -> alloy::rlp::Result<Self> {
-        Ok(Self {
-            block_number: Decodable::decode(buf)?,
-            index_in_block: Decodable::decode(buf)?,
-        })
-    }
 }
