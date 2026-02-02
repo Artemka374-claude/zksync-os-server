@@ -558,6 +558,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         config.batcher_config.interop_roots_per_batch_limit,
         // todo: change to config.sequencer_config.interop_roots_per_tx when contracts are updated
         1,
+        config.sequencer_config.service_block_delay,
         current_protocol_version.clone(),
         config.sequencer_config.fee_collector_address,
         last_constructed_block_ctx_sender,

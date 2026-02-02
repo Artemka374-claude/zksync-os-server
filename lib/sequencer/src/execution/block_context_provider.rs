@@ -48,6 +48,7 @@ pub struct BlockContextProvider<Mempool> {
     pubdata_limit: u64,
     interop_roots_per_block: u64,
     interop_roots_per_tx: usize,
+    service_block_delay: Duration,
     next_interop_tx_allowed_after: Instant,
     /// Protocol version to be used for the next produced block.
     /// Can change in runtime in case of upgrades.
@@ -73,6 +74,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         pubdata_limit: u64,
         interop_roots_per_block: u64,
         interop_roots_per_tx: usize,
+        service_block_delay: Duration,
         protocol_version: ProtocolSemanticVersion,
         fee_collector_address: Address,
         last_constructed_block_ctx_sender: watch::Sender<Option<BlockContext>>,
@@ -92,6 +94,7 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             pubdata_limit,
             interop_roots_per_block,
             interop_roots_per_tx,
+            service_block_delay,
             next_interop_tx_allowed_after: Instant::now(),
             protocol_version,
             fee_collector_address,
@@ -329,7 +332,6 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         block_output: &BlockOutput,
         replay_record: &ReplayRecord,
         cmd_type: BlockCommandType,
-        block_time: Option<Duration>,
     ) {
         let mut l2_transactions = Vec::new();
         let mut interop_txs = Vec::new();
@@ -372,10 +374,11 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         if let Some(last_interop_root_id) =
             self.interop_tx_pool.on_canonical_state_change(interop_txs)
         {
-            if let Some(block_time) = block_time {
-                self.next_interop_tx_allowed_after = Instant::now() + block_time * 3;
-            }
-            self.next_interop_root_id = last_interop_root_id + 1;
+            self.next_interop_tx_allowed_after = Instant::now() + self.service_block_delay;
+            self.next_interop_event_index = InteropRootsLogIndex {
+                block_number: last_interop_log_index.block_number,
+                index_in_block: last_interop_log_index.index_in_block + 1,
+            };
         }
         EXECUTION_METRICS
             .next_l1_priority_id
