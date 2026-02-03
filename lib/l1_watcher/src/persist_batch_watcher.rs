@@ -84,6 +84,7 @@ impl<BatchStorage: WriteBatch, Finality: WriteFinality>
         Ok(DiscoveredCommittedBatch {
             batch_info,
             block_range: report.firstBlockNumber..=report.lastBlockNumber,
+            sl_commit_block_number: log.block_number.unwrap(),
         })
     }
 }

@@ -1,15 +1,21 @@
 use crate::ReadRpcStorage;
+use crate::log_proof_utils::{
+    batch_tree_proof, chain_proof_vector, find_sl_block_number_with_execute, get_chain_log_proof,
+};
 use crate::result::ToRpcResult;
-use alloy::primitives::{Address, B256, BlockNumber, TxHash, keccak256};
+use alloy::primitives::{Address, B256, BlockNumber, TxHash, U256, keccak256};
+use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::Index;
+use anyhow::Context;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use std::sync::Arc;
+use zksync_os_batch_types::DiscoveredCommittedBatch;
 use zksync_os_genesis::{GenesisInput, GenesisInputSource};
 use zksync_os_l1_watcher::CommittedBatchProvider;
 use zksync_os_mini_merkle_tree::MiniMerkleTree;
 use zksync_os_rpc_api::{types::BlockMetadata, types::L2ToL1LogProof, zks::ZksApiServer};
-use zksync_os_storage_api::{read_aggregated_root, RepositoryError, StateError};
+use zksync_os_storage_api::{RepositoryError, StateError, read_aggregated_root};
 use zksync_os_types::L2_TO_L1_TREE_SIZE;
 
 const LOG_PROOF_SUPPORTED_METADATA_VERSION: u8 = 1;
@@ -20,6 +26,8 @@ pub struct ZksNamespace<RpcStorage> {
     committed_batch_provider: CommittedBatchProvider,
     storage: RpcStorage,
     genesis_input_source: Arc<dyn GenesisInputSource>,
+    l2_chain_id: u64,
+    gateway_provider: Option<DynProvider>,
 }
 
 impl<RpcStorage> ZksNamespace<RpcStorage> {
@@ -29,6 +37,8 @@ impl<RpcStorage> ZksNamespace<RpcStorage> {
         committed_batch_provider: CommittedBatchProvider,
         storage: RpcStorage,
         genesis_input_source: Arc<dyn GenesisInputSource>,
+        l2_chain_id: u64,
+        gateway_provider: Option<DynProvider>,
     ) -> Self {
         Self {
             bridgehub_address,
@@ -36,6 +46,8 @@ impl<RpcStorage> ZksNamespace<RpcStorage> {
             committed_batch_provider,
             storage,
             genesis_input_source,
+            l2_chain_id,
+            gateway_provider,
         }
     }
 }
@@ -118,13 +130,67 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
             .collect::<Vec<_>>();
 
         // todo: provide batch chain proof when ran on top of gateway
-        let (batch_proof_len, batch_chain_proof, is_final_node) = (0, Vec::<B256>::new(), true);
+        let (batch_proof_len, batch_chain_proof, is_final_node) = match &self.gateway_provider {
+            Some(gateway_provider) => {
+                let Some(gateway_block_number_with_event) = find_sl_block_number_with_execute(
+                    batch.sl_commit_block_number,
+                    self.l2_chain_id,
+                    batch_number,
+                    gateway_provider,
+                )
+                .await?
+                else {
+                    return Ok(None);
+                };
+                let gateway_batch: DiscoveredCommittedBatch = gateway_provider
+                    .raw_request(
+                        "unstable_getBatchByBlockNumber".into(),
+                        gateway_block_number_with_event,
+                    )
+                    .await
+                    .context("unstable_getBatchByBlockNumber")?;
+
+                let mut chain_log_proof = get_chain_log_proof(
+                    self.l2_chain_id,
+                    gateway_batch.last_block_number(),
+                    gateway_provider,
+                )
+                .await?;
+
+                let gw_local_root: B256 = gateway_provider
+                    .raw_request("unstable_getLocalRoot".into(), gateway_batch.number())
+                    .await
+                    .context("unstable_getLocalRoot")?;
+
+                // Chain tree is the right subtree of the aggregated tree.
+                // We append root of the left subtree to form full proof.
+                chain_log_proof.chain_id_leaf_proof_mask |=
+                    U256::from(1u64 << chain_log_proof.chain_id_leaf_proof.len());
+                chain_log_proof.chain_id_leaf_proof.push(gw_local_root);
+
+                let chain_proof_vector =
+                    chain_proof_vector(gateway_batch.number(), chain_log_proof, gateway_provider)
+                        .await?;
+
+                let (mut batch_chain_proof, batch_proof_len) = batch_tree_proof(
+                    gateway_batch.block_range,
+                    self.l2_chain_id,
+                    batch_number,
+                    gateway_provider,
+                )
+                .await?;
+                batch_chain_proof.extend(chain_proof_vector);
+
+                (batch_proof_len, batch_chain_proof, false)
+            }
+            None => (0, Vec::<B256>::new(), true),
+        };
 
         let proof = {
             let mut metadata = [0u8; 32];
             metadata[0] = LOG_PROOF_SUPPORTED_METADATA_VERSION;
             metadata[1] = log_leaf_proof.len() as u8;
-            metadata[2] = batch_proof_len as u8;
+            metadata[2] = batch_proof_len;
             metadata[3] = if is_final_node { 1 } else { 0 };
 
             let mut result = vec![B256::new(metadata)];

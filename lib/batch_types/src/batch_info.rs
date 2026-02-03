@@ -41,7 +41,7 @@ impl BatchInfo {
         chain_address: Address,
         batch_number: u64,
         pubdata_mode: PubdataMode,
-        aggregated_root: B256
+        aggregated_root: B256,
     ) -> Self {
         let mut priority_operations_hash = keccak256([]);
         let mut number_of_layer1_txs = 0;
@@ -318,6 +318,8 @@ pub struct DiscoveredCommittedBatch {
     pub batch_info: StoredBatchInfo,
     /// Range of L2 blocks that belong to this batch.
     pub block_range: ops::RangeInclusive<BlockNumber>,
+    /// TODO: replace with `sl_execute_block_number` if possible
+    pub sl_commit_block_number: BlockNumber,
 }
 
 impl DiscoveredCommittedBatch {

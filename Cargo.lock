@@ -15753,6 +15753,7 @@ dependencies = [
  "zk_ee 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.2.5)",
  "zksync_os_api",
  "zksync_os_batch_types",
+ "zksync_os_contract_interface",
  "zksync_os_evm_errors",
  "zksync_os_genesis",
  "zksync_os_interface",
@@ -15774,6 +15775,7 @@ dependencies = [
  "alloy-rlp",
  "jsonrpsee",
  "serde",
+ "zksync_os_batch_types",
  "zksync_os_genesis",
  "zksync_os_types",
 ]
