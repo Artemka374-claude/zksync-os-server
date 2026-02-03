@@ -14,7 +14,15 @@ use tokio::{
     time::Instant,
 };
 use zksync_os_interface::types::{BlockContext, BlockHashes, BlockOutput};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::{
+    sync::{mpsc, watch},
+    time::Instant,
+};
+use zksync_os_interface::types::{BlockContext, BlockHashes, BlockOutput};
 use zksync_os_mempool::{
+    CanonicalStateUpdate, InteropTxPool, L2TransactionPool, PoolUpdateKind, ReplayTxStream,
+    best_transactions,
     CanonicalStateUpdate, InteropTxPool, L2TransactionPool, PoolUpdateKind, ReplayTxStream,
     best_transactions,
 };
@@ -40,12 +48,17 @@ pub struct BlockContextProvider<Mempool> {
     l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
     upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
     interop_tx_pool: InteropTxPool,
+    interop_tx_pool: InteropTxPool,
     l2_mempool: Mempool,
     block_hashes_for_next_block: BlockHashes,
     previous_block_timestamp: u64,
     chain_id: u64,
     gas_limit: u64,
     pubdata_limit: u64,
+    interop_roots_per_block: u64,
+    interop_roots_per_tx: usize,
+    service_block_delay: Duration,
+    next_interop_tx_allowed_after: Instant,
     interop_roots_per_block: u64,
     interop_roots_per_tx: usize,
     service_block_delay: Duration,
@@ -66,12 +79,16 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
         l1_transactions: mpsc::Receiver<L1PriorityEnvelope>,
         upgrade_transactions: mpsc::Receiver<UpgradeTransaction>,
         interop_tx_pool: InteropTxPool,
+        interop_tx_pool: InteropTxPool,
         l2_mempool: Mempool,
         block_hashes_for_next_block: BlockHashes,
         previous_block_timestamp: u64,
         chain_id: u64,
         gas_limit: u64,
         pubdata_limit: u64,
+        interop_roots_per_block: u64,
+        interop_roots_per_tx: usize,
+        service_block_delay: Duration,
         interop_roots_per_block: u64,
         interop_roots_per_tx: usize,
         service_block_delay: Duration,
@@ -86,12 +103,17 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             l1_transactions,
             upgrade_transactions,
             interop_tx_pool,
+            interop_tx_pool,
             l2_mempool,
             block_hashes_for_next_block,
             previous_block_timestamp,
             chain_id,
             gas_limit,
             pubdata_limit,
+            interop_roots_per_block,
+            interop_roots_per_tx,
+            service_block_delay,
+            next_interop_tx_allowed_after: Instant::now(),
             interop_roots_per_block,
             interop_roots_per_tx,
             service_block_delay,
@@ -115,6 +137,10 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                 let mut best_txs = best_transactions(
                     &self.l2_mempool,
                     &mut self.l1_transactions,
+                    self.interop_tx_pool.interop_transactions_with_delay(
+                        self.interop_roots_per_tx,
+                        self.next_interop_tx_allowed_after,
+                    ),
                     self.interop_tx_pool.interop_transactions_with_delay(
                         self.interop_roots_per_tx,
                         self.next_interop_tx_allowed_after,
@@ -330,13 +356,18 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
     pub async fn on_canonical_state_change(
         &mut self,
         block_output: &BlockOutput,
+        block_output: &BlockOutput,
         replay_record: &ReplayRecord,
         cmd_type: BlockCommandType,
     ) {
         let mut l2_transactions = Vec::new();
         let mut interop_txs = Vec::new();
+        let mut interop_txs = Vec::new();
         for tx in &replay_record.transactions {
             match tx.envelope() {
+                ZkEnvelope::InteropRoots(interop_tx) => {
+                    interop_txs.push(interop_tx.clone());
+                }
                 ZkEnvelope::InteropRoots(interop_tx) => {
                     interop_txs.push(interop_tx.clone());
                 }

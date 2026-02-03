@@ -100,6 +100,7 @@ pub struct PreparedBlockCommand<'a> {
     pub seal_policy: SealPolicy,
     pub invalid_tx_policy: InvalidTxPolicy,
     pub tx_source: Pin<Box<dyn TxStream<Item = ZkTransaction> + Send + 'a>>,
+    pub tx_source: Pin<Box<dyn TxStream<Item = ZkTransaction> + Send + 'a>>,
     /// L1 transaction serial id expected at the beginning of this block.
     /// Not used in execution directly, but required to construct ReplayRecord
     pub starting_l1_priority_id: L1TxSerialId,

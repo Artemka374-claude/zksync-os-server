@@ -122,6 +122,11 @@ impl InteropRootsEnvelope {
         //     .expect("failed to decode interop roots")
         //     .interopRootsInput
         //     .len() as u64
+        // todo: return back once contracts can handle multiple roots in one call
+        // addInteropRootsInBatchCall::abi_decode(self.inner.input())
+        //     .expect("failed to decode interop roots")
+        //     .interopRootsInput
+        //     .len() as u64
         1
     }
 

@@ -28,6 +28,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
     state: R,
     latency_tracker: &ComponentStateHandle<SequencerState>,
 ) -> Result<(BlockOutput, ReplayRecord, Vec<(TxHash, InvalidTransaction)>), BlockDump> {
+) -> Result<(BlockOutput, ReplayRecord, Vec<(TxHash, InvalidTransaction)>), BlockDump> {
     tracing::debug!(command = ?command, block_number=command.block_context.block_number, "Executing command");
     latency_tracker.enter_state(SequencerState::InitializingVm);
     let ctx = command.block_context;
@@ -87,6 +88,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
             maybe_tx = command.tx_source.next() => {
                 latency_tracker.enter_state(SequencerState::Execution);
                 let Some(tx) = maybe_tx else {
+                let Some(tx) = maybe_tx else {
                     tracing::debug!(
                         block_number = ctx.block_number,
                         txs = executed_txs.len(),
@@ -95,6 +97,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
                     break SealReason::TxStreamExhausted;
                 };
 
+                if let Some(reason) = should_exclude_and_seal(&ctx, cumulative_gas_used, interop_roots_count, command.interop_roots_per_block, &tx) {
                 if let Some(reason) = should_exclude_and_seal(&ctx, cumulative_gas_used, interop_roots_count, command.interop_roots_per_block, &tx) {
                     tracing::debug!(block_number = ctx.block_number, "sealing block as next tx cannot be included");
                     break reason;
@@ -331,6 +334,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
 
     Ok((
         output,
+        output,
         ReplayRecord::new(
             ctx,
             command.starting_l1_priority_id,
@@ -351,12 +355,14 @@ fn should_exclude_and_seal(
     cumulative_gas_used: u64,
     interop_roots_count: u64,
     interop_roots_per_block: u64,
+    interop_roots_per_block: u64,
     tx: &ZkTransaction,
 ) -> Option<SealReason> {
     if cumulative_gas_used + tx.inner.gas_limit() > ctx.gas_limit {
         return Some(SealReason::GasLimit);
     }
     if let ZkEnvelope::InteropRoots(interop_roots_tx) = tx.inner.inner()
+        && interop_roots_count + interop_roots_tx.interop_roots_count() > interop_roots_per_block
         && interop_roots_count + interop_roots_tx.interop_roots_count() > interop_roots_per_block
     {
         return Some(SealReason::LimitedInteropOnlyBlock);
