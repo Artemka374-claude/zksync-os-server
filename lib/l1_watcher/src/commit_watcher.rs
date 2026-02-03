@@ -1,10 +1,10 @@
 use crate::committed_batch_provider::CommittedBatchProvider;
 use crate::watcher::{L1Watcher, L1WatcherError};
-use crate::{DiscoveredCommittedBatch, L1WatcherConfig, ProcessL1Event, util};
+use crate::{L1WatcherConfig, ProcessL1Event, util};
 use alloy::primitives::Address;
 use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::Log;
-use zksync_os_batch_types::BatchInfo;
+use zksync_os_batch_types::{BatchInfo, DiscoveredCommittedBatch};
 use zksync_os_contract_interface::IExecutor::ReportCommittedBatchRangeZKsyncOS;
 use zksync_os_contract_interface::ZkChain;
 use zksync_os_storage_api::WriteFinality;
@@ -76,7 +76,7 @@ impl<Finality: WriteFinality> ProcessL1Event for L1CommitWatcher<Finality> {
         &mut self,
         report: ReportCommittedBatchRangeZKsyncOS,
         log: Log,
-    ) -> Result<(), L1WatcherError> {
+    ) -> Result<bool, L1WatcherError> {
         let batch_number = report.batchNumber;
         if batch_number < self.next_batch_number {
             tracing::debug!(batch_number, "skipping already processed committed batch");
@@ -99,7 +99,7 @@ impl<Finality: WriteFinality> ProcessL1Event for L1CommitWatcher<Finality> {
                 block_range: report.firstBlockNumber..=report.lastBlockNumber,
             };
 
-            let last_committed_block = committed_batch.last_block();
+            let last_committed_block = committed_batch.last_block_number();
             self.finality.update_finality_status(|finality| {
                 assert!(
                     batch_number > finality.last_committed_batch,
@@ -114,6 +114,6 @@ impl<Finality: WriteFinality> ProcessL1Event for L1CommitWatcher<Finality> {
             });
             self.committed_batch_provider.insert(committed_batch);
         }
-        Ok(())
+        Ok(true)
     }
 }

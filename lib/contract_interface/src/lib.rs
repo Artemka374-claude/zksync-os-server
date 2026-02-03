@@ -91,6 +91,7 @@ alloy::sol! {
         function sharedBridge() public view returns (address);
         function getAllZKChainChainIDs() external view returns (uint256[] memory);
         function messageRoot() external view returns (address);
+        function whitelistedSettlementLayers(uint256 _chainId) external view returns (bool);
 
         struct L2TransactionRequestDirect {
             uint256 chainId;
@@ -485,6 +486,16 @@ impl<P: Provider + Clone> Bridgehub<P> {
     pub async fn get_all_zk_chain_chain_ids(&self) -> alloy::contract::Result<Vec<U256>> {
         self.instance.getAllZKChainChainIDs().call().await
     }
+
+    pub async fn whitelisted_settlement_layers(
+        &self,
+        chain_id: impl Into<U256>,
+    ) -> alloy::contract::Result<bool> {
+        self.instance
+            .whitelistedSettlementLayers(chain_id.into())
+            .call()
+            .await
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -711,6 +722,24 @@ impl<P: Provider> ZkChain<P> {
             .call()
             .await
             .enrich("getBaseToken", None)
+    }
+
+    /// Returns base token gas price multiplier nominator.
+    pub async fn base_token_gas_price_multiplier_nominator(&self) -> Result<u128> {
+        self.instance
+            .baseTokenGasPriceMultiplierNominator()
+            .call()
+            .await
+            .enrich("baseTokenGasPriceMultiplierNominator", None)
+    }
+
+    /// Returns base token gas price multiplier denominator.
+    pub async fn base_token_gas_price_multiplier_denominator(&self) -> Result<u128> {
+        self.instance
+            .baseTokenGasPriceMultiplierDenominator()
+            .call()
+            .await
+            .enrich("baseTokenGasPriceMultiplierDenominator", None)
     }
 }
 

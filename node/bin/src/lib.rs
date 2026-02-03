@@ -7,11 +7,11 @@ mod command_source;
 pub mod config;
 pub mod default_protocol_version;
 mod en_remote_config;
-mod l1_provider;
 mod node_state_on_startup;
 mod priority_tree_steps;
 pub mod prover_api;
 mod prover_input_generator;
+mod provider;
 mod replay_transport;
 mod state_initializer;
 pub mod tree_manager;
@@ -24,7 +24,6 @@ use crate::config::{
     Config, ProverApiConfig, base_token_price_updater_config, gas_adjuster_config,
 };
 use crate::en_remote_config::load_remote_config;
-use crate::l1_provider::build_node_l1_provider;
 use crate::node_state_on_startup::NodeStateOnStartup;
 use crate::priority_tree_steps::priority_tree_en_step::PriorityTreeENStep;
 use crate::priority_tree_steps::priority_tree_pipeline_step::PriorityTreePipelineStep;
@@ -38,6 +37,7 @@ use crate::prover_api::prover_server;
 use crate::prover_api::snark_job_manager::{FakeSnarkProver, SnarkJobManager};
 use crate::prover_api::snark_proving_pipeline_step::SnarkProvingPipelineStep;
 use crate::prover_input_generator::ProverInputGenerator;
+use crate::provider::build_node_provider;
 use crate::replay_transport::replay_server;
 use crate::state_initializer::StateInitializer;
 use crate::tree_manager::TreeManager;
@@ -67,10 +67,10 @@ use zksync_os_l1_sender::commands::commit::CommitCommand;
 use zksync_os_l1_sender::commands::prove::ProofCommand;
 use zksync_os_l1_sender::pipeline_component::L1Sender;
 use zksync_os_l1_sender::upgrade_gatekeeper::UpgradeGatekeeper;
-use zksync_os_l1_watcher::InteropWatcher;
 use zksync_os_l1_watcher::{
     CommittedBatchProvider, L1CommitWatcher, L1ExecuteWatcher, L1TxWatcher, L1UpgradeTxWatcher,
 };
+use zksync_os_l1_watcher::{InteropWatcher, L1PersistBatchWatcher};
 use zksync_os_mempool::L2TransactionPool;
 use zksync_os_merkle_tree::{MerkleTree, MerkleTreeVersion, RocksDBWrapper};
 use zksync_os_metadata::NODE_VERSION;
@@ -85,7 +85,7 @@ use zksync_os_rpc_api::eth::EthApiClient;
 use zksync_os_sequencer::execution::block_context_provider::BlockContextProvider;
 use zksync_os_sequencer::execution::{FeeParams, FeeProvider, Sequencer};
 use zksync_os_status_server::run_status_server;
-use zksync_os_storage::db::BlockReplayStorage;
+use zksync_os_storage::db::{BlockReplayStorage, ExecutedBatchStorage};
 use zksync_os_storage::in_memory::Finality;
 use zksync_os_storage::lazy::RepositoryManager;
 use zksync_os_storage_api::{
@@ -101,6 +101,7 @@ const BLOCK_REPLAY_WAL_DB_NAME: &str = "block_replay_wal";
 const STATE_TREE_DB_NAME: &str = "tree";
 const PRIORITY_TREE_DB_NAME: &str = "priority_txs_tree";
 const REPOSITORY_DB_NAME: &str = "repository";
+const BATCH_DB_NAME: &str = "batch";
 pub const INTERNAL_CONFIG_FILE_NAME: &str = "internal_config.json";
 
 #[allow(clippy::too_many_arguments)]
@@ -184,43 +185,61 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     let (l1_upgrade_transactions_sender, l1_upgrade_transactions_receiver) =
         tokio::sync::mpsc::channel(5);
 
-    tracing::info!("Initializing BatchStorage");
-    let batch_storage = ProofStorage::new(
-        ObjectStoreFactory::new(config.prover_api_config.object_store.clone())
-            .create_store()
-            .await
-            .unwrap(),
-    );
-
     // This is the only place where we initialize L1 provider, every component shares the same
     // cloned provider.
-    let l1_provider = build_node_l1_provider(&config.general_config.l1_rpc_url).await;
+    let l1_provider = build_node_provider(&config.general_config.l1_rpc_url).await;
+    let sl_provider = match &config.general_config.gateway_rpc_url {
+        Some(url) => build_node_provider(url).await,
+        None => l1_provider.clone(),
+    };
 
     tracing::info!("Reading L1 state");
     let l1_state = if config.sequencer_config.is_main_node() {
         // On the main node, we need to wait for the pending L1 transactions (commit/prove/execute) to be mined before proceeding.
-        L1State::fetch_finalized(l1_provider.clone().erased(), bridgehub_address, chain_id)
-            .await
-            .expect("failed to fetch finalized L1 state")
+        L1State::fetch_finalized(
+            l1_provider.clone().erased(),
+            sl_provider.clone().erased(),
+            bridgehub_address,
+            chain_id,
+        )
+        .await
+        .expect("failed to fetch finalized L1 state")
     } else {
-        L1State::fetch(l1_provider.clone().erased(), bridgehub_address, chain_id)
-            .await
-            .expect("failed to fetch L1 state")
+        L1State::fetch(
+            l1_provider.clone().erased(),
+            sl_provider.clone().erased(),
+            bridgehub_address,
+            chain_id,
+        )
+        .await
+        .expect("failed to fetch L1 state")
     };
     tracing::info!(?l1_state, "L1 state");
     l1_state.report_metrics();
 
-    match (config.l1_sender_config.pubdata_mode, l1_state.da_input_mode) {
-        (PubdataMode::Calldata | PubdataMode::Blobs, BatchDaInputMode::Validium)
-        | (PubdataMode::Validium, BatchDaInputMode::Rollup) => {
-            panic!("Pubdata mode doesn't correspond to pricing mode from the l1");
+    match (
+        config.l1_sender_config.pubdata_mode,
+        l1_state.da_input_mode,
+        config.general_config.gateway_rpc_url.is_some(),
+    ) {
+        (
+            PubdataMode::Calldata | PubdataMode::Blobs | PubdataMode::RelayedL2Calldata,
+            BatchDaInputMode::Validium,
+            _,
+        )
+        | (PubdataMode::Validium, BatchDaInputMode::Rollup, _) => {
+            panic!(
+                "Pubdata mode doesn't correspond to pricing mode from the l1. \
+                L1 mode: {:?}, configured pubdata mode: {:?}",
+                l1_state.da_input_mode, config.l1_sender_config.pubdata_mode
+            );
         }
         _ => {}
     };
 
     let genesis = Genesis::new(
         genesis_input_source.clone(),
-        l1_state.diamond_proxy.clone(),
+        l1_state.diamond_proxy_l1.clone(),
         chain_id,
     );
 
@@ -392,7 +411,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     tasks.spawn(
         L1CommitWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
-            node_startup_state.l1_state.diamond_proxy.clone(),
+            node_startup_state.l1_state.diamond_proxy_sl.clone(),
             committed_batch_provider.clone(),
             finality_storage.clone(),
         )
@@ -405,7 +424,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     tasks.spawn(
         L1ExecuteWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
-            node_startup_state.l1_state.diamond_proxy.clone(),
+            node_startup_state.l1_state.diamond_proxy_sl.clone(),
             committed_batch_provider.clone(),
             finality_storage.clone(),
         )
@@ -440,7 +459,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     if current_protocol_version >= ProtocolSemanticVersion::new(0, 31, 0) {
         tasks.spawn(
             InteropWatcher::create_watcher(
-                node_startup_state.l1_state.bridgehub.clone(),
+                node_startup_state.l1_state.bridgehub_l1.clone(), // todo
                 config.l1_watcher_config.clone().into(),
                 interop_transactions_sender,
                 next_interop_event_index.clone(),
@@ -455,7 +474,8 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     tasks.spawn(
         L1TxWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
-            node_startup_state.l1_state.diamond_proxy.clone(),
+            node_startup_state.l1_state.diamond_proxy_l1.clone(),
+            node_startup_state.l1_state.diamond_proxy_sl.clone(),
             l1_transactions_sender,
             next_l1_priority_id,
         )
@@ -499,7 +519,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             config.l1_sender_config.max_priority_fee_per_gas.0,
         );
         let gas_adjuster = GasAdjuster::new(
-            l1_provider.clone().erased(),
+            sl_provider.clone().erased(),
             gas_adjuster_config,
             pubdata_price_sender,
             blob_fill_ratio_sender,
@@ -575,7 +595,8 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     tasks.spawn(
         L1UpgradeTxWatcher::create_watcher(
             config.l1_watcher_config.clone().into(),
-            node_startup_state.l1_state.diamond_proxy.clone(),
+            node_startup_state.l1_state.diamond_proxy_l1.clone(),
+            node_startup_state.l1_state.diamond_proxy_sl.clone(),
             bytecode_supplier_address,
             current_protocol_version,
             l1_upgrade_transactions_sender,
@@ -584,6 +605,23 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         .expect("failed to start L1 upgrade transaction watcher")
         .run()
         .map(report_exit("L1 upgrade transaction watcher")),
+    );
+
+    // ========== Start L1 Persist Batch Watcher ===========
+
+    let persistent_batch_storage =
+        ExecutedBatchStorage::new(&config.general_config.rocks_db_path.join(BATCH_DB_NAME));
+    tasks.spawn(
+        L1PersistBatchWatcher::create_watcher(
+            config.l1_watcher_config.clone().into(),
+            node_startup_state.l1_state.diamond_proxy_sl.clone(),
+            persistent_batch_storage.clone(),
+            finality_storage.clone(),
+        )
+        .await
+        .expect("failed to start L1 batch persist watcher")
+        .run()
+        .map(report_exit("L1 batch persist watcher")),
     );
 
     // ========== Start Sequencer ===========
@@ -614,17 +652,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
 
     if config.sequencer_config.is_main_node() {
         let mut base_token_price_updater = BaseTokenPriceUpdater::new(
-            l1_state
-                .diamond_proxy
-                .get_base_token_address()
-                .await
-                .expect("Failed to get base token address"),
-            *l1_state.diamond_proxy.address(),
-            l1_state
-                .diamond_proxy
-                .get_admin()
-                .await
-                .expect("Failed to get chain admin address"),
+            l1_state.diamond_proxy_l1.clone(),
             l1_provider.clone(),
             base_token_price_updater_config(
                 &config.base_token_price_updater_config,
@@ -648,8 +676,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         // Main Node
         run_main_node_pipeline(
             &config,
-            l1_provider.clone(),
-            batch_storage.clone(),
+            sl_provider.clone(),
             node_startup_state,
             block_replay_storage.clone(),
             &mut tasks,
@@ -663,14 +690,14 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             stop_receiver.clone(),
             tx_acceptance_state_sender,
             sidecar_sender,
-            committed_batch_provider,
+            committed_batch_provider.clone(),
         )
         .await;
     } else {
         // External Node
         run_en_pipeline(
             &config,
-            committed_batch_provider,
+            committed_batch_provider.clone(),
             node_startup_state,
             block_replay_storage.clone(),
             &mut tasks,
@@ -704,7 +731,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         repositories,
         block_replay_storage,
         finality_storage,
-        batch_storage,
+        persistent_batch_storage,
         state,
     );
     tasks.spawn(
@@ -713,6 +740,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             chain_id,
             bridgehub_address,
             bytecode_supplier_address,
+            committed_batch_provider,
             rpc_storage,
             l2_mempool,
             genesis_input_source,
@@ -732,11 +760,10 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
 #[allow(clippy::too_many_arguments)]
 async fn run_main_node_pipeline(
     config: &Config,
-    l1_provider: FillProvider<
+    sl_provider: FillProvider<
         impl TxFiller<Ethereum> + WalletProvider<Wallet = EthereumWallet> + 'static,
         impl Provider<Ethereum> + Clone + 'static,
     >,
-    batch_storage: ProofStorage,
     node_state_on_startup: NodeStateOnStartup,
     block_replay_storage: impl WriteReplay + Clone,
     tasks: &mut JoinSet<()>,
@@ -752,8 +779,18 @@ async fn run_main_node_pipeline(
     sidecar_sender: tokio::sync::mpsc::Sender<BlobTransactionSidecar>,
     committed_batch_provider: CommittedBatchProvider,
 ) {
+    tracing::info!("Initializing ProofStorage");
+    // todo: this is used purely for prover API
+    //       decide what to do with it - might still be useful to debug failed proofs
+    let proof_storage = ProofStorage::new(
+        ObjectStoreFactory::new(config.prover_api_config.object_store.clone())
+            .create_store()
+            .await
+            .unwrap(),
+    );
+
     let (fri_proving_step, fri_job_manager) = FriProvingPipelineStep::new(
-        batch_storage.clone(),
+        proof_storage.clone(),
         node_state_on_startup.l1_state.last_proved_batch,
         config.prover_api_config.fri_job_timeout,
         config.prover_api_config.max_assigned_batch_range,
@@ -771,7 +808,7 @@ async fn run_main_node_pipeline(
             prover_server::run(
                 fri_job_manager.clone(),
                 snark_job_manager.clone(),
-                batch_storage.clone(),
+                proof_storage.clone(),
                 config.prover_api_config.address.clone(),
             )
             .map(report_exit("prover_server_job")),
@@ -848,12 +885,13 @@ async fn run_main_node_pipeline(
                 last_persisted_block: node_state_on_startup.block_replay_storage_last_block,
             },
             chain_id,
-            chain_address: node_state_on_startup.l1_state.diamond_proxy_address(),
+            chain_address_sl: node_state_on_startup.l1_state.diamond_proxy_address_sl(),
             pubdata_limit_bytes: config.sequencer_config.block_pubdata_limit_bytes,
             batcher_config: config.batcher_config.clone(),
             pubdata_mode: config.l1_sender_config.pubdata_mode,
             sidecar_sender,
             committed_batch_provider: committed_batch_provider.clone(),
+            read_state: state.clone(),
         })
         .pipe(BatchVerificationPipelineStep::new(
             config.batch_verification_config.clone().into(),
@@ -864,25 +902,25 @@ async fn run_main_node_pipeline(
         .pipe(GaplessCommitter {
             next_expected_batch_number: node_state_on_startup.l1_state.last_executed_batch + 1,
             last_committed_batch_number: node_state_on_startup.l1_state.last_committed_batch,
-            proof_storage: batch_storage.clone(),
+            proof_storage,
             batch_verification_l1_config: node_state_on_startup.l1_state.batch_verification.clone(),
         })
         .pipe(UpgradeGatekeeper::new(
-            node_state_on_startup.l1_state.diamond_proxy.clone(),
+            node_state_on_startup.l1_state.diamond_proxy_sl.clone(),
         ))
         .pipe(L1Sender::<_, _, CommitCommand> {
-            provider: l1_provider.clone(),
+            provider: sl_provider.clone(),
             config: config.l1_sender_config.clone().into(),
-            to_address: node_state_on_startup.l1_state.validator_timelock,
+            to_address: node_state_on_startup.l1_state.validator_timelock_sl,
         })
         .pipe(snark_proving_step)
         .pipe(GaplessL1ProofSender::new(
             node_state_on_startup.l1_state.last_executed_batch + 1,
         ))
         .pipe(L1Sender::<_, _, ProofCommand> {
-            provider: l1_provider.clone(),
+            provider: sl_provider.clone(),
             config: config.l1_sender_config.clone().into(),
-            to_address: node_state_on_startup.l1_state.validator_timelock,
+            to_address: node_state_on_startup.l1_state.validator_timelock_sl,
         })
         .pipe(
             PriorityTreePipelineStep::new(
@@ -895,9 +933,9 @@ async fn run_main_node_pipeline(
             .unwrap(),
         )
         .pipe(L1Sender {
-            provider: l1_provider,
+            provider: sl_provider,
             config: config.l1_sender_config.clone().into(),
-            to_address: node_state_on_startup.l1_state.validator_timelock,
+            to_address: node_state_on_startup.l1_state.validator_timelock_sl,
         })
         .pipe(BatchSink::new(internal_config_manager))
         .spawn(tasks);
@@ -968,11 +1006,12 @@ async fn run_en_pipeline(
             config.batch_verification_config.client_enabled,
             BatchVerificationClient::new(
                 chain_id,
-                *node_state_on_startup.l1_state.diamond_proxy.address(),
+                node_state_on_startup.l1_state.diamond_proxy_address_sl(),
                 config.batch_verification_config.connect_address.clone(),
                 config.batch_verification_config.signing_key.clone(),
                 finality.clone(),
                 node_state_on_startup.l1_state.clone(),
+                state.clone(),
             ),
             NoOpSink::new(),
         )
@@ -1050,7 +1089,7 @@ async fn commit_proof_execute_block_numbers(
         committed_batch_provider
             .get(l1_state.last_committed_batch)
             .expect("last committed batch was not discovered on L1")
-            .last_block()
+            .last_block_number()
     };
 
     // only used to log on node startup
@@ -1060,7 +1099,7 @@ async fn commit_proof_execute_block_numbers(
         committed_batch_provider
             .get(l1_state.last_proved_batch)
             .expect("last proved batch was not discovered on L1")
-            .last_block()
+            .last_block_number()
     };
 
     let last_executed_block = if l1_state.last_executed_batch == 0 {
@@ -1069,7 +1108,7 @@ async fn commit_proof_execute_block_numbers(
         committed_batch_provider
             .get(l1_state.last_executed_batch)
             .expect("last executed batch was not discovered on L1")
-            .last_block()
+            .last_block_number()
     };
     (last_committed_block, last_proved_block, last_executed_block)
 }

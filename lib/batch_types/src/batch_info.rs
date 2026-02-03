@@ -1,8 +1,9 @@
 use alloy::consensus::{BlobTransactionSidecar, SidecarBuilder, SimpleCoder};
-use alloy::primitives::{Address, B256, U256, keccak256};
+use alloy::primitives::{Address, B256, BlockNumber, U256, keccak256};
 use blake2::{Blake2s256, Digest};
 use ruint::aliases::B160;
 use serde::{Deserialize, Serialize};
+use std::ops;
 use std::ops::{Deref, DerefMut};
 use zksync_os_contract_interface::models::{CommitBatchInfo, StoredBatchInfo};
 use zksync_os_interface::types::{BlockContext, BlockOutput};
@@ -40,6 +41,7 @@ impl BatchInfo {
         chain_address: Address,
         batch_number: u64,
         pubdata_mode: PubdataMode,
+        aggregated_root: B256
     ) -> Self {
         let mut priority_operations_hash = keccak256([]);
         let mut number_of_layer1_txs = 0;
@@ -123,8 +125,9 @@ impl BatchInfo {
             Some(L2_TO_L1_TREE_SIZE),
         )
         .merkle_root();
-        // The result should be Keccak(l2_l1_local_root, aggreagation_root) - we don't compute aggregation root yet
-        let l2_to_l1_logs_root_hash = keccak256([l2_l1_local_root.0, [0u8; 32]].concat());
+
+        // The result should be Keccak(l2_l1_local_root, aggregated_root).
+        let l2_to_l1_logs_root_hash = keccak256([l2_l1_local_root.0, aggregated_root.0].concat());
 
         let commit_info = CommitBatchInfo {
             batch_number,
@@ -253,7 +256,8 @@ fn calculate_da_fields(
 ) -> DAFields {
     let (da_commitment, operator_da_input, blob_sidecar) =
         match (pubdata_mode, batch_execution_version) {
-            (PubdataMode::Calldata, _) | (PubdataMode::Validium, 4) => {
+            (PubdataMode::Calldata | PubdataMode::RelayedL2Calldata, _)
+            | (PubdataMode::Validium, 4) => {
                 let mut operator_da_input = Vec::with_capacity(32 * 3 + 1 + pubdata.len() + 1 + 32);
 
                 // reference for this header is taken from zk_ee: https://github.com/matter-labs/zk_ee/blob/ad-aggregation-program/aggregator/src/aggregation/da_commitment.rs#L27
@@ -305,5 +309,35 @@ fn calculate_da_fields(
         da_commitment,
         operator_da_input,
         blob_sidecar,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiscoveredCommittedBatch {
+    /// Information about committed batch as was discovered on-chain.
+    pub batch_info: StoredBatchInfo,
+    /// Range of L2 blocks that belong to this batch.
+    pub block_range: ops::RangeInclusive<BlockNumber>,
+}
+
+impl DiscoveredCommittedBatch {
+    pub fn number(&self) -> u64 {
+        self.batch_info.batch_number
+    }
+
+    pub fn hash(&self) -> B256 {
+        self.batch_info.hash()
+    }
+
+    pub fn first_block_number(&self) -> BlockNumber {
+        *self.block_range.start()
+    }
+
+    pub fn last_block_number(&self) -> BlockNumber {
+        *self.block_range.end()
+    }
+
+    pub fn block_count(&self) -> u64 {
+        self.block_range.end() - self.block_range.start() + 1
     }
 }

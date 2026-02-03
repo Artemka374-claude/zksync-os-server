@@ -28,7 +28,7 @@ pub trait ProcessRawEvents: Send + Sync + 'static {
     fn contract_addresses(&self) -> ValueOrArray<Address>;
 
     /// Invoked each time a new log matching the filter is found.
-    async fn process_raw_event(&mut self, event: Log) -> Result<(), L1WatcherError>;
+    async fn process_raw_event(&mut self, event: Log) -> Result<bool, L1WatcherError>;
 }
 
 /// Blanket implementation of `ProcessRawEvents` for any type implementing `ProcessL1Event`.
@@ -51,12 +51,11 @@ where
         self.contract_address().into()
     }
 
-    async fn process_raw_event(&mut self, log: Log) -> Result<(), L1WatcherError> {
+    async fn process_raw_event(&mut self, log: Log) -> Result<bool, L1WatcherError> {
         let sol_event = T::SolEvent::decode_log(&log.inner)?.data;
         let watched_event =
             T::WatchedEvent::erased_try_from(sol_event).map_err(L1WatcherError::Convert)?;
-        self.process_event(watched_event, log).await?;
-        Ok(())
+        Ok(self.process_event(watched_event, log).await?)
     }
 }
 
@@ -84,12 +83,13 @@ pub trait ProcessL1Event {
     /// Returns the address of the contract this processor is interested in.
     fn contract_address(&self) -> Address;
 
-    /// Invoked each time a new event is found.
+    /// Invoked each time a new event is found. Return bool indicating whether event was processed.
+    /// If `false` is returned, `process_event` will be called again on the next iteration.
     async fn process_event(
         &mut self,
         event: Self::WatchedEvent,
         log: Log,
-    ) -> Result<(), L1WatcherError>;
+    ) -> Result<bool, L1WatcherError>;
 }
 
 /// Implementation of `TryFrom` that erases the error type to `anyhow::Error`.

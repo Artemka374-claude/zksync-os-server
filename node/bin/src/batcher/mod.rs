@@ -8,20 +8,20 @@ use std::pin::Pin;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Sleep};
 use tracing;
-use zksync_os_batch_types::BlockMerkleTreeData;
+use zksync_os_batch_types::{BlockMerkleTreeData, DiscoveredCommittedBatch};
 use zksync_os_contract_interface::models::StoredBatchInfo;
 use zksync_os_interface::types::BlockOutput;
 use zksync_os_l1_sender::batcher_metrics::BATCHER_METRICS;
 use zksync_os_l1_sender::batcher_model::{
     BatchEnvelope, BatchForSigning, MissingSignature, ProverInput,
 };
-use zksync_os_l1_watcher::{CommittedBatchProvider, DiscoveredCommittedBatch};
+use zksync_os_l1_watcher::CommittedBatchProvider;
 use zksync_os_merkle_tree::TreeBatchOutput;
 use zksync_os_observability::{
     ComponentStateHandle, ComponentStateReporter, GenericComponentState,
 };
 use zksync_os_pipeline::{PeekableReceiver, PipelineComponent};
-use zksync_os_storage_api::ReplayRecord;
+use zksync_os_storage_api::{ReadStateHistory, ReplayRecord};
 use zksync_os_types::PubdataMode;
 
 pub mod batch_builder;
@@ -42,19 +42,22 @@ pub struct BatcherStartupConfig {
 }
 
 /// Batcher component - handles batching logic, receives blocks and prepares batch data
-pub struct Batcher {
+pub struct Batcher<ReadState> {
     pub startup_config: BatcherStartupConfig,
     pub chain_id: u64,
-    pub chain_address: Address,
+    pub chain_address_sl: Address,
     pub pubdata_limit_bytes: u64,
     pub batcher_config: BatcherConfig,
     pub pubdata_mode: PubdataMode,
     pub sidecar_sender: mpsc::Sender<BlobTransactionSidecar>,
     pub committed_batch_provider: CommittedBatchProvider,
+    pub read_state: ReadState,
 }
 
 #[async_trait]
-impl PipelineComponent for Batcher {
+impl<ReadState: ReadStateHistory + Clone + Send + 'static> PipelineComponent
+    for Batcher<ReadState>
+{
     type Input = (BlockOutput, ReplayRecord, ProverInput, BlockMerkleTreeData);
     type Output = BatchEnvelope<ProverInput, MissingSignature>;
 
@@ -83,7 +86,7 @@ impl PipelineComponent for Batcher {
                     self.startup_config.last_executed_batch
                 )
             })?;
-        let first_expected_block = last_executed_batch.last_block() + 1;
+        let first_expected_block = last_executed_batch.last_block_number() + 1;
         let mut prev_batch_info = last_executed_batch.batch_info;
 
         // We might receive some blocks that belong to already executed batches. We can skip these
@@ -133,9 +136,9 @@ impl PipelineComponent for Batcher {
                     })?;
                 // Validate that the existing batch's first block matches the next block in the stream
                 anyhow::ensure!(
-                    committed_batch.first_block() == next_block_number,
+                    committed_batch.first_block_number() == next_block_number,
                     "Existing batch first block ({}) does not match next block in stream ({})",
-                    committed_batch.first_block(),
+                    committed_batch.first_block_number(),
                     next_block_number
                 );
 
@@ -206,7 +209,7 @@ impl PipelineComponent for Batcher {
     }
 }
 
-impl Batcher {
+impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
     async fn create_batch(
         &mut self,
         block_receiver: &mut PeekableReceiver<(
@@ -318,10 +321,11 @@ impl Batcher {
             prev_batch_info.clone(),
             batch_number,
             self.chain_id,
-            self.chain_address,
+            self.chain_address_sl,
             // we need to adapt pubdata mode depending on protocol version, to ensure automatic DA mode change during v30 upgrade
             self.pubdata_mode
                 .adapt_for_protocol_version(protocol_version),
+            &self.read_state,
         )?;
         Ok(batch_envelope)
     }
@@ -342,8 +346,8 @@ impl Batcher {
 
         tracing::info!(
             batch_number,
-            first_block = existing_batch.first_block(),
-            last_block = existing_batch.last_block(),
+            first_block = existing_batch.first_block_number(),
+            last_block = existing_batch.last_block_number(),
             "Recreating existing batch"
         );
 
@@ -376,7 +380,7 @@ impl Batcher {
         let last_block_number = blocks.last().unwrap().0.header.number;
         assert_eq!(
             last_block_number,
-            existing_batch.last_block(),
+            existing_batch.last_block_number(),
             "Block number mismatch in last block of a rebuilt batch"
         );
 
@@ -386,9 +390,10 @@ impl Batcher {
             prev_batch_info.clone(),
             batch_number,
             self.chain_id,
-            self.chain_address,
+            self.chain_address_sl,
             // Assume pubdata mode does not change
             self.pubdata_mode,
+            &self.read_state,
         )?;
 
         // Verify that the rebuilt batch matches the stored batch by comparing hashes

@@ -19,7 +19,7 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tokio_util::io::{ReaderStream, StreamReader};
 use zksync_os_batch_types::BlockMerkleTreeData;
 use zksync_os_batch_types::{BatchInfo, BatchSignature};
-use zksync_os_contract_interface::l1_discovery::{BatchVerificationL1, L1State};
+use zksync_os_contract_interface::l1_discovery::{BatchVerificationSL, L1State};
 use zksync_os_interface::types::BlockOutput;
 use zksync_os_merkle_tree::TreeBatchOutput;
 use zksync_os_observability::ComponentStateHandle;
@@ -27,8 +27,8 @@ use zksync_os_observability::ComponentStateReporter;
 use zksync_os_observability::GenericComponentState;
 use zksync_os_observability::StateLabel;
 use zksync_os_pipeline::{PeekableReceiver, PipelineComponent};
-use zksync_os_storage_api::ReadFinality;
-use zksync_os_storage_api::ReplayRecord;
+use zksync_os_storage_api::{read_aggregated_root, ReplayRecord, StateError};
+use zksync_os_storage_api::{ReadFinality, ReadStateHistory};
 
 mod block_cache;
 mod metrics;
@@ -36,13 +36,14 @@ mod metrics;
 use block_cache::BlockCache;
 
 /// Client that connects to the main sequencer for batch verification
-pub struct BatchVerificationClient<Finality> {
+pub struct BatchVerificationClient<Finality, ReadState> {
     chain_id: u64,
-    diamond_proxy: Address,
+    diamond_proxy_sl: Address,
     server_address: String,
     l1_state: L1State,
     signer: PrivateKeySigner,
     block_cache: BlockCache<Finality, (BlockOutput, ReplayRecord, BlockMerkleTreeData)>,
+    read_state: ReadState,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -53,26 +54,27 @@ enum BatchVerificationError {
     TreeError,
     #[error("Batch data mismatch: {0}")]
     BatchDataMismatch(String),
+    #[error("State error: {0}")]
+    State(#[from] StateError),
 }
 
-type VerificationInput = (
-    BlockOutput,
-    zksync_os_storage_api::ReplayRecord,
-    BlockMerkleTreeData,
-);
+type VerificationInput = (BlockOutput, ReplayRecord, BlockMerkleTreeData);
 
-impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
+impl<Finality: ReadFinality, ReadState: ReadStateHistory>
+    BatchVerificationClient<Finality, ReadState>
+{
     pub fn new(
         chain_id: u64,
-        diamond_proxy: Address,
+        diamond_proxy_sl: Address,
         server_address: String,
         private_key: SecretString,
         finality: Finality,
         l1_state: L1State,
+        read_state: ReadState,
     ) -> Self {
         let signer = PrivateKeySigner::from_str(private_key.expose_secret())
             .expect("Invalid batch verification private key");
-        if let BatchVerificationL1::Enabled(l1_config) = l1_state.batch_verification.clone()
+        if let BatchVerificationSL::Enabled(l1_config) = l1_state.batch_verification.clone()
             && !l1_config.validators.contains(&signer.address())
         {
             tracing::warn!(
@@ -83,11 +85,12 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
 
         Self {
             chain_id,
-            diamond_proxy,
+            diamond_proxy_sl,
             server_address,
             l1_state,
             signer,
             block_cache: BlockCache::new(finality),
+            read_state,
         }
     }
 
@@ -215,6 +218,10 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
                 })
                 .collect::<Result<Vec<_>, BatchVerificationError>>()?;
 
+        let state_view = self.read_state
+            .state_view_at(request.last_block_number)?;
+        let aggregated_root = read_aggregated_root(state_view);
+
         let batch_info = BatchInfo::new(
             blocks
                 .iter()
@@ -228,9 +235,10 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
                 })
                 .collect(),
             self.chain_id,
-            self.diamond_proxy,
+            self.diamond_proxy_sl,
             request.batch_number,
             request.pubdata_mode,
+            aggregated_root,
         );
 
         if batch_info.commit_info != request.commit_data {
@@ -244,8 +252,8 @@ impl<Finality: ReadFinality> BatchVerificationClient<Finality> {
         let signature = BatchSignature::sign_batch(
             &request.prev_commit_data,
             &batch_info,
-            self.l1_state.l1_chain_id,
-            self.l1_state.validator_timelock,
+            self.l1_state.sl_chain_id,
+            self.l1_state.validator_timelock_sl,
             &blocks.first().unwrap().1.protocol_version,
             &self.signer,
         )
@@ -289,7 +297,9 @@ impl StateLabel for BatchVerificationClientState {
 }
 
 #[async_trait]
-impl<Finality: ReadFinality> PipelineComponent for BatchVerificationClient<Finality> {
+impl<Finality: ReadFinality, ReadState: ReadStateHistory> PipelineComponent
+    for BatchVerificationClient<Finality, ReadState>
+{
     type Input = VerificationInput;
     type Output = ();
 
