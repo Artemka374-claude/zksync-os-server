@@ -47,6 +47,7 @@ impl ExecutedBatchStorage {
         let db = RocksDB::<ExecutedBatchColumnFamily>::new(db_path)
             .expect("Failed to open ExecutedBatchStorage");
 
+        // todo: initialize with genesis
         Self { db }
     }
 
