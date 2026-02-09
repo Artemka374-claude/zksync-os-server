@@ -1,11 +1,12 @@
 use std::{
     collections::VecDeque,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use futures::{Stream, StreamExt, ready};
+use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tokio::{
     sync::broadcast::{self},
@@ -30,26 +31,30 @@ impl InteropTxPool {
 }
 
 impl InteropTxPool {
-    pub fn interop_transactions_with_delay(
+    pub async fn interop_transactions_with_delay(
         &self,
         interop_roots_per_tx: usize,
         next_tx_allowed_after: Instant,
     ) -> InteropTransactions {
         self.inner
             .read()
-            .unwrap()
+            .await
             .interop_transactions_with_delay(interop_roots_per_tx, next_tx_allowed_after)
     }
 
-    pub fn add_root(&mut self, root: IndexedInteropRoot) {
-        self.inner.write().unwrap().add_root(root);
+    pub async fn add_root(&mut self, root: IndexedInteropRoot) {
+        self.inner.write().await.add_root(root);
     }
 
-    pub fn on_canonical_state_change(
+    pub async fn on_canonical_state_change(
         &mut self,
         txs: Vec<InteropRootsEnvelope>,
     ) -> Option<InteropRootsLogIndex> {
-        self.inner.write().unwrap().on_canonical_state_change(txs)
+        self.inner.write().await.on_canonical_state_change(txs)
+    }
+
+    pub async fn pending_interop_roots_count(&self) -> usize {
+        self.inner.read().await.pending_interop_roots_count()
     }
 }
 
@@ -143,6 +148,10 @@ impl InteropTxPoolInner {
     pub fn add_root(&mut self, root: IndexedInteropRoot) {
         let _ = self.sender.send(root.root.clone());
         self.pending_roots.push_front(root);
+    }
+
+    pub fn pending_interop_roots_count(&self) -> usize {
+        self.pending_roots.len()
     }
 
     /// Cleans up the stream and removes all roots that were sent in transactions

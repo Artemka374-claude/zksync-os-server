@@ -115,10 +115,12 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
                 let mut best_txs = best_transactions(
                     &self.l2_mempool,
                     &mut self.l1_transactions,
-                    self.interop_tx_pool.interop_transactions_with_delay(
-                        self.interop_roots_per_tx,
-                        self.next_interop_tx_allowed_after,
-                    ),
+                    self.interop_tx_pool
+                        .interop_transactions_with_delay(
+                            self.interop_roots_per_tx,
+                            self.next_interop_tx_allowed_after,
+                        )
+                        .await,
                     &mut self.upgrade_transactions,
                 );
 
@@ -371,8 +373,23 @@ impl<Mempool: L2TransactionPool> BlockContextProvider<Mempool> {
             }
         }
 
-        if let Some(last_interop_log_index) =
-            self.interop_tx_pool.on_canonical_state_change(interop_txs)
+        let interop_roots_count = interop_txs
+            .iter()
+            .map(|tx| tx.interop_roots_count())
+            .sum::<u64>();
+
+        let sleep_duration = Duration::from_millis(100);
+
+        while self.interop_tx_pool.pending_interop_roots_count().await
+            < interop_roots_count as usize
+        {
+            tokio::time::sleep(sleep_duration).await;
+        }
+
+        if let Some(last_interop_log_index) = self
+            .interop_tx_pool
+            .on_canonical_state_change(interop_txs)
+            .await
         {
             self.next_interop_tx_allowed_after = Instant::now() + self.service_block_delay;
             self.next_interop_event_index = InteropRootsLogIndex {
