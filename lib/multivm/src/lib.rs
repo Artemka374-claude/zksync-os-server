@@ -52,7 +52,7 @@ pub fn run_block<
                     AbiTxSource::new(tx_source),
                     tx_result_callback,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -67,7 +67,7 @@ pub fn run_block<
                     tx_source,
                     tx_result_callback,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -88,7 +88,7 @@ pub fn run_block<
                     tx_source,
                     tx_result_callback,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -103,7 +103,7 @@ pub fn run_block<
                     tx_source,
                     tx_result_callback,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -132,7 +132,7 @@ pub fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyT
                     storage,
                     preimage_source,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -146,7 +146,7 @@ pub fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyT
                     storage,
                     preimage_source,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -166,7 +166,7 @@ pub fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyT
                     storage,
                     preimage_source,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
@@ -180,7 +180,7 @@ pub fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyT
                     storage,
                     preimage_source,
                     tracer,
-                    &mut NopValidator::default(),
+                    &mut NopValidator,
                 )
                 .map_err(|err| anyhow::anyhow!(err))
         }
