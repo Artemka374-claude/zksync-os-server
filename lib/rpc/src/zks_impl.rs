@@ -9,7 +9,7 @@ use zksync_os_genesis::{GenesisInput, GenesisInputSource};
 use zksync_os_l1_watcher::CommittedBatchProvider;
 use zksync_os_mini_merkle_tree::MiniMerkleTree;
 use zksync_os_rpc_api::{types::BlockMetadata, types::L2ToL1LogProof, zks::ZksApiServer};
-use zksync_os_storage_api::{read_aggregated_root, RepositoryError, StateError};
+use zksync_os_storage_api::{RepositoryError, StateError, read_aggregated_root};
 use zksync_os_types::L2_TO_L1_TREE_SIZE;
 
 const LOG_PROOF_SUPPORTED_METADATA_VERSION: u8 = 1;

@@ -6,7 +6,7 @@ use zksync_os_l1_sender::batcher_metrics::BatchExecutionStage;
 use zksync_os_l1_sender::batcher_model::{
     BatchEnvelope, BatchForSigning, BatchMetadata, ProverInput,
 };
-use zksync_os_storage_api::{read_aggregated_root, ReadStateHistory, ReplayRecord};
+use zksync_os_storage_api::{ReadStateHistory, ReplayRecord, read_aggregated_root};
 use zksync_os_types::{ProvingVersion, PubdataMode};
 
 /// Takes a vector of blocks and produces a batch envelope.
@@ -28,8 +28,7 @@ pub(crate) fn seal_batch<ReadState: ReadStateHistory>(
     let block_number_to = blocks.last().unwrap().1.block_context.block_number;
     let execution_version = blocks.first().unwrap().1.block_context.execution_version;
 
-    let state_view = read_state
-        .state_view_at(block_number_to)?;
+    let state_view = read_state.state_view_at(block_number_to)?;
     let aggregated_root = read_aggregated_root(state_view);
     let batch_info = BatchInfo::new(
         blocks

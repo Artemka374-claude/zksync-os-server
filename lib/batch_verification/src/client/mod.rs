@@ -27,8 +27,8 @@ use zksync_os_observability::ComponentStateReporter;
 use zksync_os_observability::GenericComponentState;
 use zksync_os_observability::StateLabel;
 use zksync_os_pipeline::{PeekableReceiver, PipelineComponent};
-use zksync_os_storage_api::{read_aggregated_root, ReplayRecord, StateError};
 use zksync_os_storage_api::{ReadFinality, ReadStateHistory};
+use zksync_os_storage_api::{ReplayRecord, StateError, read_aggregated_root};
 
 mod block_cache;
 mod metrics;
@@ -218,8 +218,7 @@ impl<Finality: ReadFinality, ReadState: ReadStateHistory>
                 })
                 .collect::<Result<Vec<_>, BatchVerificationError>>()?;
 
-        let state_view = self.read_state
-            .state_view_at(request.last_block_number)?;
+        let state_view = self.read_state.state_view_at(request.last_block_number)?;
         let aggregated_root = read_aggregated_root(state_view);
 
         let batch_info = BatchInfo::new(
