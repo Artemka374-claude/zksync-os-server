@@ -397,7 +397,8 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             "EN cannot run without p2p networking; to fix: \
             set `network.enabled=true` to enable p2p networking, \
             populate `network.secret_key` with a 256-bit ECDSA key (can be randomly generated locally), \
-            populate `network.boot_nodes` with at least one known node from the chain"
+            populate `network.boot_nodes` with at least one known node from the chain. \
+            See https://github.com/matter-labs/zksync-os-server/pull/873 for full rollout instructions."
         );
     }
 
