@@ -57,16 +57,13 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
             return Ok(None);
         };
         let block_number = tx_meta.block_number;
-        let batch = self
+        let Some(batch) = self
             .storage
             .batch()
             .get_batch_by_block_number(block_number)?
-            .ok_or(ZksError::BatchNotAvailableYet)?;
-        let execute_sl_block_number = self
-            .storage
-            .batch()
-            .get_execute_sl_block_number_by_batch_number(batch.number())?
-            .ok_or(ZksError::BatchNotAvailableYet)?;
+        else {
+            return Ok(None);
+        };
 
         let mut batch_index = None;
         let mut merkle_tree_leaves = vec![];
@@ -119,6 +116,11 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
 
         let (batch_proof_len, batch_chain_proof, is_final_node) = match &self.gateway_provider {
             Some(gateway_provider) => {
+                let execute_sl_block_number = self
+                    .storage
+                    .batch()
+                    .get_execute_sl_block_number_by_batch_number(batch.number())?
+                    .ok_or(ZksError::BatchNotAvailableYet)?;
                 let gateway_batch: DiscoveredCommittedBatch = gateway_provider
                     .raw_request(
                         "unstable_getBatchByBlockNumber".into(),
