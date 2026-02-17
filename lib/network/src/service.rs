@@ -8,9 +8,11 @@ use reth_discv5::discv5;
 use reth_eth_wire::HelloMessageWithProtocols;
 use reth_net_nat::NatResolver;
 use reth_network::error::NetworkError;
+use reth_network::eth_requests::EthRequestHandler;
 use reth_network::types::peers::config::PeerBackoffDurations;
 use reth_network::{NetworkConfig as RethNetworkConfig, NetworkManager, PeersConfig};
 use reth_provider::BlockNumReader;
+use reth_provider::test_utils::MockEthProvider;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -30,6 +32,7 @@ const MAX_ACTIVE_CONNECTIONS: usize = 10;
 #[derive(Debug)]
 pub struct NetworkService {
     network_manager: NetworkManager,
+    request_handler: EthRequestHandler<MockEthProvider>,
     protocol_rx: mpsc::UnboundedReceiver<ProtocolEvent>,
 }
 
@@ -125,19 +128,23 @@ impl NetworkService {
             .build(client);
         tracing::debug!(?net_cfg, "starting p2p network service");
         // Create network manager. We are not interested in `txpool` because transaction gossip is
-        // disabled. `request_handler` is also unused as it is specific to `eth` protocol.
-        let (network_manager, _txpool, _request_handler) =
-            NetworkManager::builder(net_cfg).await?.split();
+        // disabled. `request_handler` is mocked to ensure `eth` protocol handshake succeeds.
+        let (network_manager, _txpool, request_handler) = NetworkManager::builder(net_cfg)
+            .await?
+            .request_handler(MockEthProvider::default())
+            .split();
 
         Ok(Self {
             network_manager,
             protocol_rx,
+            request_handler,
         })
     }
 
     /// Consume the service by registering it as an endless task that drives the network state.
     pub fn run(mut self, tasks: &mut JoinSet<()>, stop_receiver: watch::Receiver<bool>) {
         tasks.spawn(self.network_manager);
+        tasks.spawn(self.request_handler);
         tasks.spawn(async move {
             while !*stop_receiver.borrow() {
                 let Some(event) = self.protocol_rx.recv().await else {
