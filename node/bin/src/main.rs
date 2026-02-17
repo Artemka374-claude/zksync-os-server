@@ -1,11 +1,15 @@
 use clap::{Parser, Subcommand};
+use reth_chainspec::{Chain, ChainSpec};
+use reth_provider::test_utils::MockEthProvider;
 use smart_config::{ConfigRepository, ConfigSources, Environment, Json, Yaml};
 use std::{fs, future, path::Path, time::Duration};
 use tempfile::TempDir;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
+use tokio::task::JoinSet;
 use zksync_os_internal_config::InternalConfigManager;
 use zksync_os_metadata::NODE_VERSION;
+use zksync_os_network::service::NetworkService;
 use zksync_os_object_store::ObjectStoreMode;
 use zksync_os_observability::prometheus::PrometheusExporterConfig;
 use zksync_os_server::config::{
@@ -27,6 +31,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 enum CliCommand {
     /// Configuration-related tools.
     Config(ConfigArgs),
+    Bootstrap,
 }
 
 #[derive(Debug, Parser)]
@@ -138,6 +143,10 @@ pub async fn main() {
 
     let config_repo = ConfigRepository::new(&config_schema).with_all(config_sources);
 
+    // =========== init interruption channel ===========
+    // todo: implement interruption handling in other tasks
+    let (stop_sender, mut stop_receiver) = watch::channel(false);
+
     // =========== handle the CLI subcommand if any ===========
     if let Some(cmd) = opt.cmd {
         match cmd {
@@ -145,16 +154,46 @@ pub async fn main() {
                 args.run(config_repo, "").unwrap();
                 return;
             }
+            CliCommand::Bootstrap => {
+                let network_config = config_repo
+                    .single::<NetworkConfig>()
+                    .expect("Failed to load network config")
+                    .parse()
+                    .expect("Failed to parse network config");
+                let genesis_config = config_repo
+                    .single::<GenesisConfig>()
+                    .expect("Failed to load genesis config")
+                    .parse()
+                    .expect("Failed to parse genesis config");
+                let network_service = NetworkService::bootstrap(
+                    network_config.into(),
+                    MockEthProvider::default().with_chain_spec(
+                        ChainSpec::builder()
+                            .chain(Chain::from_id(genesis_config.chain_id.expect(
+                                "`genesis_chain_id` is required to be set for bootstrap nodes",
+                            )))
+                            .genesis(Default::default())
+                            .build(),
+                    ),
+                )
+                .await
+                .expect("failed to start network service");
+                let mut tasks: JoinSet<()> = JoinSet::new();
+                network_service.run(&mut tasks, stop_receiver.clone());
+                while !*stop_receiver.borrow() {
+                    stop_receiver
+                        .changed()
+                        .await
+                        .expect("stop receiver changed");
+                }
+            }
         }
     }
 
     let mut config = build_external_config(config_repo);
     tracing::info!(?config, "Loaded config");
     load_internal_config(&mut config);
-    // =========== init interruption channel ===========
 
-    // todo: implement interruption handling in other tasks
-    let (stop_sender, stop_receiver) = watch::channel(false);
     // ======= Run tasks ===========
     let main_stop = stop_receiver.clone(); // keep original for Prometheus
     let ephemeral_enabled = config.general_config.ephemeral;
