@@ -2,7 +2,6 @@ use crate::config::ProofStorageConfig;
 use crate::prover_api::fri_job_manager::FailedFriProof;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use smart_config::{DescribeConfig, DeserializeConfig};
 use std::cmp::Reverse;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -87,6 +86,14 @@ impl StoredBatch {
     }
 }
 
+// TODO: This is not thread-safe
+// For context, this thing usually has 2 copies and only one is a writer, don't see thing changing soon
+// I would either keep it or wrap in Arc<Mutex<, is there better way?
+// TODO: Add metrics, I think the following ones:
+// - Write latency
+// - Read latency
+// - Disk usage
+// This would mean 2x3 = 6 new metrics OR I could unify them between instances and only ahve 3
 /// Storage for data blobs that
 /// automatically removes old files to keep disk usage within capacity_bytes
 #[derive(Clone, Debug)]
