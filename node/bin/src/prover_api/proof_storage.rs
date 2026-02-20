@@ -127,14 +127,6 @@ impl StoredBatch {
     }
 }
 
-// TODO: This is not thread-safe
-// For context, this thing usually has 2 copies and only one is a writer, don't see thing changing soon
-// I would either keep it or wrap in Arc<Mutex<, is there better way?
-// TODO: Add metrics, I think the following ones:
-// - Write latency
-// - Read latency
-// - Disk usage
-// This would mean 2x3 = 6 new metrics OR I could unify them between instances and only ahve 3
 /// Storage for data blobs that
 /// automatically removes old files to keep disk usage within capacity_bytes
 #[derive(Clone, Debug)]
@@ -273,7 +265,7 @@ mod tests {
         const LIMIT: u64 = 1 << 20;
         let dir = TempDir::new()?;
         let path = dir.path().to_owned();
-        let storage = BoundedFileStorage::new(path, LIMIT);
+        let storage = BoundedFileStorage::new(path, LIMIT, 600);
         let big_str_a = "a".repeat((LIMIT * 2 / 3) as usize);
         storage.store("key", &big_str_a).await?;
         assert_eq!(storage.load("key").await?, Some(big_str_a));
