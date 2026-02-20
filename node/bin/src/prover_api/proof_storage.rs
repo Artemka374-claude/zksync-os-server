@@ -1,5 +1,6 @@
 use crate::config::ProofStorageConfig;
 use crate::prover_api::fri_job_manager::FailedFriProof;
+use crate::prover_api::metrics::{PROOF_STORAGE_METRICS, ProofStorageMethod};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -42,6 +43,9 @@ impl ProofStorage {
 
     /// Persist a BatchWithProof. Overwrites any existing entry for the same batch.
     pub async fn save_batch_with_proof(&self, batch: &StoredBatch) -> anyhow::Result<()> {
+        let latency =
+            PROOF_STORAGE_METRICS.latency[&ProofStorageMethod::SaveBatchWithProof].start();
+
         let key = format!("batch_{}.json", batch.batch_number());
         let usage = self
             .batches_with_proof
@@ -49,6 +53,9 @@ impl ProofStorage {
             .await
             .store(&key, batch)
             .await?;
+
+        PROOF_STORAGE_METRICS.disk_usage[&ProofStorageMethod::SaveBatchWithProof].set(usage);
+        latency.observe();
         Ok(())
     }
 
@@ -57,8 +64,10 @@ impl ProofStorage {
         &self,
         batch_num: u64,
     ) -> anyhow::Result<Option<SignedBatchEnvelope<FriProof>>> {
+        let latency = PROOF_STORAGE_METRICS.latency[&ProofStorageMethod::GetBatchWithProof].start();
+
         let key = format!("batch_{batch_num}.json");
-        match self
+        let result = match self
             .batches_with_proof
             .lock()
             .await
@@ -67,21 +76,34 @@ impl ProofStorage {
         {
             Ok(o) => Ok(o.map(|o| o.batch_envelope())),
             Err(err) => Err(err),
-        }
+        };
+
+        latency.observe();
+        result
     }
 
     /// Save a failed FRI proof for debugging.
     pub async fn save_failed_proof(&self, proof: &FailedFriProof) -> anyhow::Result<()> {
+        let latency = PROOF_STORAGE_METRICS.latency[&ProofStorageMethod::SaveFailedProof].start();
+
         let key = format!("failed_{}.json", proof.batch_number);
         let usage = self.failed.lock().await.store(&key, proof).await?;
+
+        PROOF_STORAGE_METRICS.disk_usage[&ProofStorageMethod::SaveFailedProof].set(usage);
+        latency.observe();
         Ok(())
     }
 
     /// Get the failed proof for a given batch number.
     /// Returns None if no failed proof exists for this batch.
     pub async fn get_failed_proof(&self, batch_num: u64) -> anyhow::Result<Option<FailedFriProof>> {
+        let latency = PROOF_STORAGE_METRICS.latency[&ProofStorageMethod::GetFailedProof].start();
+
         let key = format!("failed_{batch_num}.json");
-        self.failed.lock().await.load(&key).await
+        let result = self.failed.lock().await.load(&key).await;
+
+        latency.observe();
+        result
     }
 }
 
