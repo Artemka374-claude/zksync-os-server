@@ -14822,7 +14822,6 @@ dependencies = [
  "zksync_os_contract_interface",
  "zksync_os_multivm",
  "zksync_os_network",
- "zksync_os_object_store",
  "zksync_os_prover_service",
  "zksync_os_rpc_api",
  "zksync_os_server",
