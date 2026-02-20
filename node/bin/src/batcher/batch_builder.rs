@@ -27,6 +27,7 @@ pub(crate) fn seal_batch<ReadState: ReadStateHistory>(
     let block_number_from = blocks.first().unwrap().1.block_context.block_number;
     let block_number_to = blocks.last().unwrap().1.block_context.block_number;
     let execution_version = blocks.first().unwrap().1.block_context.execution_version;
+    let protocol_version = blocks.first().unwrap().1.protocol_version.clone();
 
     let state_view = read_state.state_view_at(block_number_to)?;
     let aggregated_root = read_aggregated_root(state_view);
@@ -47,6 +48,7 @@ pub(crate) fn seal_batch<ReadState: ReadStateHistory>(
         batch_number,
         pubdata_mode,
         aggregated_root,
+        &protocol_version,
     );
 
     use zk_os_forward_system::run::generate_batch_proof_input;
@@ -80,7 +82,6 @@ pub(crate) fn seal_batch<ReadState: ReadStateHistory>(
         }
     };
 
-    let protocol_version = blocks.first().unwrap().1.protocol_version.clone();
     // Sanity check: all blocks in the batch should have the same protocol version
     for (_, replay_record, _, _) in blocks.iter().skip(1) {
         anyhow::ensure!(

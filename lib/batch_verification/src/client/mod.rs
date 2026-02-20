@@ -238,6 +238,7 @@ impl<Finality: ReadFinality, ReadState: ReadStateHistory>
             request.batch_number,
             request.pubdata_mode,
             aggregated_root,
+            &blocks.first().unwrap().1.protocol_version,
         );
 
         if batch_info.commit_info != request.commit_data {

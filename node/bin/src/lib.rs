@@ -186,6 +186,11 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         Some(url) => build_node_provider(url).await,
         None => l1_provider.clone(),
     };
+    let gateway_provider = config
+        .general_config
+        .gateway_rpc_url
+        .as_ref()
+        .map(|_| sl_provider.clone());
 
     tracing::info!("Reading L1 state");
     let l1_state = if node_role.is_main() {
@@ -211,17 +216,12 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     tracing::info!(?l1_state, "L1 state");
     l1_state.report_metrics();
 
-    match (
-        config.l1_sender_config.pubdata_mode,
-        l1_state.da_input_mode,
-        config.general_config.gateway_rpc_url.is_some(),
-    ) {
+    match (config.l1_sender_config.pubdata_mode, l1_state.da_input_mode) {
         (
             PubdataMode::Calldata | PubdataMode::Blobs | PubdataMode::RelayedL2Calldata,
             BatchDaInputMode::Validium,
-            _,
         )
-        | (PubdataMode::Validium, BatchDaInputMode::Rollup, _) => {
+        | (PubdataMode::Validium, BatchDaInputMode::Rollup) => {
             panic!(
                 "Pubdata mode doesn't correspond to pricing mode from the l1. \
                 L1 mode: {:?}, configured pubdata mode: {:?}",
@@ -230,6 +230,15 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         }
         _ => {}
     };
+    if let (PubdataMode::Blobs | PubdataMode::Calldata, true) = (
+        config.l1_sender_config.pubdata_mode,
+        config.general_config.gateway_rpc_url.is_some(),
+    ) {
+        panic!(
+            "Pubdata mode {:?} cannot be used when settling on Gateway",
+            config.l1_sender_config.pubdata_mode
+        );
+    }
 
     let genesis = Genesis::new(
         genesis_input_source.clone(),
@@ -795,6 +804,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             tx_acceptance_state_receiver,
             last_constructed_block_ctx_receiver,
             main_node_provider,
+            gateway_provider.map(|p| p.erased()),
         )
         .map(report_exit("JSON-RPC server")),
     );

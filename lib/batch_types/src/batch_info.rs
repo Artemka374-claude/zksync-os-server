@@ -41,6 +41,7 @@ impl BatchInfo {
         batch_number: u64,
         pubdata_mode: PubdataMode,
         aggregated_root: B256,
+        protocol_version: &ProtocolSemanticVersion,
     ) -> Self {
         let mut priority_operations_hash = keccak256([]);
         let mut number_of_layer1_txs = 0;
@@ -125,8 +126,13 @@ impl BatchInfo {
         )
         .merkle_root();
 
-        // The result should be Keccak(l2_l1_local_root, aggregated_root).
-        let l2_to_l1_logs_root_hash = keccak256([l2_l1_local_root.0, aggregated_root.0].concat());
+        let l2_to_l1_logs_root_hash = if protocol_version.is_post_v31() {
+            // The result should be Keccak(l2_l1_local_root, aggregated_root).
+            keccak256([l2_l1_local_root.0, aggregated_root.0].concat())
+        } else {
+            // For older protocol versions, aggregated root should be set to zero.
+            keccak256([l2_l1_local_root.0, [0u8; 32]].concat())
+        };
 
         let commit_info = CommitBatchInfo {
             batch_number,

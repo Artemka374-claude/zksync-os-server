@@ -14861,10 +14861,8 @@ name = "zksync_os_batch_types"
 version = "0.15.1"
 dependencies = [
  "alloy",
- "anyhow",
  "basic_system 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.2.5)",
  "blake2 0.10.6",
- "ruint",
  "serde",
  "thiserror 2.0.17",
  "zk_ee 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.2.5)",

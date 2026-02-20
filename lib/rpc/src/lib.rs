@@ -73,6 +73,7 @@ pub async fn run_jsonrpsee_server<RpcStorage: ReadRpcStorage, Mempool: L2Transac
     acceptance_state: watch::Receiver<TransactionAcceptanceState>,
     last_constructed_block_context: watch::Receiver<Option<BlockContext>>,
     tx_forwarder: Option<DynProvider>,
+    gateway_provider: Option<DynProvider>,
 ) -> anyhow::Result<()> {
     tracing::info!("Starting JSON-RPC server at {}", config.address);
 
@@ -106,7 +107,7 @@ pub async fn run_jsonrpsee_server<RpcStorage: ReadRpcStorage, Mempool: L2Transac
             storage.clone(),
             genesis_input_source,
             chain_id,
-            None, // TODO
+            gateway_provider,
         )
         .into_rpc(),
     )?;
