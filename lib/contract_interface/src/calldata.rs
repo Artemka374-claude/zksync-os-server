@@ -51,18 +51,17 @@ impl CommitCalldata {
                 );
             };
 
-        if commit_data[0] != V30_ENCODING_VERSION
-            && commit_data[0] != V31_ENCODING_VERSION
-        {
+        if commit_data[0] != V30_ENCODING_VERSION && commit_data[0] != V31_ENCODING_VERSION {
             anyhow::bail!("unexpected encoding version: {}", commit_data[0]);
         }
 
         let (stored_batch_info, commit_batch_info) = match commit_data[0] {
             V30_ENCODING_VERSION => {
-                let (stored_batch_info, mut commit_batch_infos) = <(
-                    IExecutor::StoredBatchInfo,
-                    Vec<IExecutorV30::CommitBatchInfoZKsyncOS>,
-                )>::abi_decode_params(&commit_data[1..])?;
+                let (stored_batch_info, mut commit_batch_infos) =
+                    <(
+                        IExecutor::StoredBatchInfo,
+                        Vec<IExecutorV30::CommitBatchInfoZKsyncOS>,
+                    )>::abi_decode_params(&commit_data[1..])?;
                 if commit_batch_infos.len() != 1 {
                     anyhow::bail!(
                         "unexpected number of committed batch infos: {}",
@@ -75,10 +74,11 @@ impl CommitCalldata {
                 )
             }
             V31_ENCODING_VERSION => {
-                let (stored_batch_info, mut commit_batch_infos) = <(
-                    IExecutor::StoredBatchInfo,
-                    Vec<IExecutor::CommitBatchInfoZKsyncOS>,
-                )>::abi_decode_params(&commit_data[1..])?;
+                let (stored_batch_info, mut commit_batch_infos) =
+                    <(
+                        IExecutor::StoredBatchInfo,
+                        Vec<IExecutor::CommitBatchInfoZKsyncOS>,
+                    )>::abi_decode_params(&commit_data[1..])?;
                 if commit_batch_infos.len() != 1 {
                     anyhow::bail!(
                         "unexpected number of committed batch infos: {}",
@@ -125,7 +125,8 @@ pub fn encode_commit_batch_data(
             [[V29_ENCODING_VERSION].to_vec(), encoded_data].concat()
         }
         30 => {
-            let commit_batch_info = IExecutorV30::CommitBatchInfoZKsyncOS::from(commit_info.clone());
+            let commit_batch_info =
+                IExecutorV30::CommitBatchInfoZKsyncOS::from(commit_info.clone());
             tracing::debug!(
                 last_batch_hash = ?prev_batch_info.hash(),
                 last_batch_number = ?prev_batch_info.batch_number,
