@@ -5,11 +5,11 @@ use alloy::primitives::{Address, Bytes, U128};
 use alloy::signers::k256::ecdsa::SigningKey;
 use num::{BigInt, BigUint, rational::Ratio};
 use serde::{Deserialize, Serialize};
-use smart_config::metadata::TimeUnit;
+use smart_config::metadata::{SizeUnit, TimeUnit};
 use smart_config::value::SecretString;
 use smart_config::{
-    ConfigRepository, ConfigSchema, ConfigSources, DescribeConfig, DeserializeConfig, EtherAmount,
-    ParseErrors, Serde, de::Delimited, metadata::EtherUnit,
+    ByteSize, ConfigRepository, ConfigSchema, ConfigSources, DescribeConfig, DeserializeConfig,
+    EtherAmount, ParseErrors, Serde, de::Delimited, metadata::EtherUnit,
 };
 use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
@@ -672,20 +672,20 @@ pub struct ProofStorageConfig {
     pub path: PathBuf,
     /// The disk usage in bytes for batches with proofs,
     /// old entries are removed to keep usage capped
-    #[config(default_t = 1073741824)]
-    pub batch_with_proof_capacity: u64,
+    #[config(default_t = 1 * SizeUnit::GiB)]
+    pub batch_with_proof_capacity: ByteSize,
     /// The disk usage in bytes for failed proofs,
     /// old entries are removed to keep usage capped
-    #[config(default_t = 1073741824)]
-    pub failed_capacity: u64,
+    #[config(default_t = 1 * SizeUnit::GiB)]
+    pub failed_capacity: ByteSize,
 }
 
 impl Default for ProofStorageConfig {
     fn default() -> Self {
         Self {
             path: "./db/fri_proofs/".into(),
-            batch_with_proof_capacity: 1 << 30,
-            failed_capacity: 1 << 30,
+            batch_with_proof_capacity: 1 * SizeUnit::GiB,
+            failed_capacity: 1 * SizeUnit::GiB,
         }
     }
 }

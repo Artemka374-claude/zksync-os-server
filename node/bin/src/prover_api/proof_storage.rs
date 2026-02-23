@@ -23,19 +23,19 @@ impl ProofStorage {
     pub fn new(config: ProofStorageConfig) -> Self {
         tracing::info!(
             path = config.path.to_str().unwrap(),
-            batch_with_proof_capacity = config.batch_with_proof_capacity,
-            failed_capacity = config.failed_capacity,
+            batch_with_proof_capacity = config.batch_with_proof_capacity.0,
+            failed_capacity = config.failed_capacity.0,
             "Initializing proof storage"
         );
         Self {
             batches_with_proof: Arc::new(Mutex::new(BoundedFileStorage::new(
                 config.path.join("fri_batches"),
-                config.batch_with_proof_capacity,
+                config.batch_with_proof_capacity.0,
                 Self::CAPACITY_FILES,
             ))),
             failed: Arc::new(Mutex::new(BoundedFileStorage::new(
                 config.path.join("failed_proofs"),
-                config.failed_capacity,
+                config.failed_capacity.0,
                 Self::CAPACITY_FILES,
             ))),
         }
