@@ -19,6 +19,7 @@ fn create_sample_request() -> BatchVerificationRequest {
             batch_number: 42,
             new_state_commitment: B256::ZERO,
             number_of_layer1_txs: 5,
+            number_of_layer2_txs: 0,
             priority_operations_hash: B256::ZERO,
             dependency_roots_rolling_hash: B256::ZERO,
             l2_to_l1_logs_root_hash: B256::ZERO,
