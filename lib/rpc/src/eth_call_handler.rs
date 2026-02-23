@@ -25,7 +25,7 @@ use zksync_os_storage_api::ViewState;
 use zksync_os_storage_api::{
     RepositoryError, StateError, state_override_view::OverriddenStateView,
 };
-use zksync_os_types::{ExecutionVersion, ZksyncOsEncode};
+use zksync_os_types::ZksyncOsEncode;
 use zksync_os_types::{
     L1_TX_MINIMAL_GAS_LIMIT, L1Envelope, L1PriorityTxType, L1Tx, L1TxType, L2Envelope,
     REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_BYTE, SYSTEM_TX_TYPE_ID, UpgradeTxType, ZkEnvelope,
@@ -126,12 +126,6 @@ impl<RpcStorage: ReadRpcStorage> EthCallHandler<RpcStorage> {
 
         match request.transaction_type {
             Some(L1PriorityTxType::TX_TYPE) => {
-                let to_mint = if block_context.execution_version >= ExecutionVersion::V6 as u32 {
-                    // After V31, L1 transactions only need to mint the fee
-                    U256::from(gas_price) * U256::from(gas_limit)
-                } else {
-                    value + U256::from(gas_price) * U256::from(gas_limit)
-                };
                 let inner = L1Tx {
                     hash: B256::ZERO,
                     initiator: from,
@@ -142,7 +136,7 @@ impl<RpcStorage: ReadRpcStorage> EthCallHandler<RpcStorage> {
                     max_priority_fee_per_gas: max_priority_fee_per_gas.unwrap_or_default(),
                     nonce,
                     value,
-                    to_mint,
+                    to_mint: value + U256::from(gas_price) * U256::from(gas_limit),
                     refund_recipient: Address::default(),
                     input,
                     factory_deps: vec![],
@@ -562,7 +556,7 @@ impl<RpcStorage: ReadRpcStorage> EthCallHandler<RpcStorage> {
         if optimistic_gas_limit < highest_gas_limit {
             // Set the transaction's gas limit to the calculated optimistic gas limit.
             let mut optimistic_tx = tx.clone();
-            set_gas_limit(&mut optimistic_tx, optimistic_gas_limit, &block_context);
+            set_gas_limit(&mut optimistic_tx, optimistic_gas_limit);
 
             // Re-execute the transaction with the new gas limit and update the result and
             // environment.
@@ -607,7 +601,7 @@ impl<RpcStorage: ReadRpcStorage> EthCallHandler<RpcStorage> {
             };
 
             let mut mid_tx = tx.clone();
-            set_gas_limit(&mut mid_tx, mid_gas_limit, &block_context);
+            set_gas_limit(&mut mid_tx, mid_gas_limit);
             tracing::trace!(
                 gas_limit = mid_tx.gas_limit(),
                 "trying to simulate transaction"
@@ -655,7 +649,7 @@ impl<RpcStorage: ReadRpcStorage> EthCallHandler<RpcStorage> {
     }
 }
 
-fn set_gas_limit(tx: &mut ZkTransaction, gas_limit: u64, block_context: &BlockContext) {
+fn set_gas_limit(tx: &mut ZkTransaction, gas_limit: u64) {
     match tx.inner.inner_mut() {
         ZkEnvelope::System(_) => {
             unreachable!("system transactions don't have explicit gas limit");
@@ -668,13 +662,7 @@ fn set_gas_limit(tx: &mut ZkTransaction, gas_limit: u64, block_context: &BlockCo
         ZkEnvelope::L1(envelope) => {
             let tx = &mut envelope.inner;
             tx.gas_limit = gas_limit;
-            let to_mint = if block_context.execution_version >= ExecutionVersion::V6 as u32 {
-                // After V31, L1 transactions only need to mint the fee
-                U256::from(tx.max_fee_per_gas) * U256::from(gas_limit)
-            } else {
-                tx.value + U256::from(tx.max_fee_per_gas) * U256::from(gas_limit)
-            };
-            tx.to_mint = to_mint;
+            tx.to_mint = tx.value + U256::from(tx.max_fee_per_gas) * U256::from(gas_limit);
         }
         ZkEnvelope::Upgrade(envelope) => envelope.inner.gas_limit = gas_limit,
     }
