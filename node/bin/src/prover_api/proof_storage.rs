@@ -3,10 +3,11 @@ use crate::prover_api::fri_job_manager::FailedFriProof;
 use crate::prover_api::metrics::{PROOF_STORAGE_METRICS, ProofStorageMethod};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::cmp::Reverse;
+use std::collections::{HashMap, VecDeque};
+use std::fs::Metadata;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
 use tokio::sync::Mutex;
 use zksync_os_l1_sender::batcher_model::{FriProof, SignedBatchEnvelope};
@@ -18,27 +19,29 @@ pub struct ProofStorage {
     failed: Arc<Mutex<BoundedFileStorage>>,
 }
 impl ProofStorage {
-    // This limit is present because we scan the files on every write to get the size
-    const CAPACITY_FILES: u64 = 600;
-    pub fn new(config: ProofStorageConfig) -> Self {
+    pub async fn new(config: ProofStorageConfig) -> anyhow::Result<Self> {
         tracing::info!(
             path = config.path.to_str().unwrap(),
             batch_with_proof_capacity = config.batch_with_proof_capacity.0,
             failed_capacity = config.failed_capacity.0,
             "Initializing proof storage"
         );
-        Self {
-            batches_with_proof: Arc::new(Mutex::new(BoundedFileStorage::new(
-                config.path.join("fri_batches"),
-                config.batch_with_proof_capacity.0,
-                Self::CAPACITY_FILES,
-            ))),
-            failed: Arc::new(Mutex::new(BoundedFileStorage::new(
-                config.path.join("failed_proofs"),
-                config.failed_capacity.0,
-                Self::CAPACITY_FILES,
-            ))),
-        }
+        Ok(Self {
+            batches_with_proof: Arc::new(Mutex::new(
+                BoundedFileStorage::new(
+                    config.path.join("fri_batches"),
+                    config.batch_with_proof_capacity.0,
+                )
+                .await?,
+            )),
+            failed: Arc::new(Mutex::new(
+                BoundedFileStorage::new(
+                    config.path.join("failed_proofs"),
+                    config.failed_capacity.0,
+                )
+                .await?,
+            )),
+        })
     }
 
     /// Persist a BatchWithProof. Overwrites any existing entry for the same batch.
@@ -133,29 +136,65 @@ impl StoredBatch {
 struct BoundedFileStorage {
     base_dir: PathBuf,
     capacity_bytes: u64,
-    capacity_files: u64,
+    current_size: u64,
+    erase_queue: VecDeque<(PathBuf, Metadata)>,
+    // `value` is the number of times the `key` has been moved back in `erase_queue`
+    // So while this number is not zero we won't erase the file, but decrement this
+    skip_cnt: HashMap<String, u64>,
 }
 
 impl BoundedFileStorage {
-    fn new(base_dir: PathBuf, capacity_bytes: u64, capacity_files: u64) -> Self {
-        Self {
+    async fn new(base_dir: PathBuf, capacity_bytes: u64) -> anyhow::Result<Self> {
+        // List all files sorted by timestamp (descending)
+        fs::create_dir_all(&base_dir).await?;
+        let mut entries = fs::read_dir(&base_dir).await?;
+        let mut files = Vec::new();
+        while let Some(entry) = entries.next_entry().await? {
+            let meta = entry.metadata().await?;
+            if meta.is_file() {
+                files.push((entry.path(), meta));
+            }
+        }
+        files.sort_by_cached_key(|(_, meta)| meta.modified().unwrap_or(SystemTime::UNIX_EPOCH));
+
+        let mut current_size = 0_u64;
+        for (_, meta) in &files {
+            current_size += meta.len();
+        }
+
+        let mut res = Self {
             base_dir,
             capacity_bytes,
-            capacity_files,
+            current_size,
+            erase_queue: files.into_iter().collect(),
+            skip_cnt: HashMap::new(),
+        };
+
+        if current_size > capacity_bytes {
+            tracing::warn!(
+                current_size,
+                capacity_bytes,
+                "On startup, more data is used than expected"
+            );
+            res.enforce_capacity(0).await?;
         }
+
+        Ok(res)
     }
 
     /// Stores serialized value as a file named `key`,
     /// removes old files to enforce capacity constraints and
     /// returns disk usage
-    async fn store<T: Serialize>(&self, key: &str, value: &T) -> anyhow::Result<u64> {
+    async fn store<T: Serialize>(&mut self, key: &str, value: &T) -> anyhow::Result<u64> {
         fs::create_dir_all(&self.base_dir).await?;
 
         let file_path = self.base_dir.join(key);
         let data = serde_json::to_vec(value)?;
-        let usage = self.enforce_capacity(data.len() as u64).await?;
-        if (data.len() as u64) <= self.capacity_bytes {
-            fs::write(file_path, data).await?;
+        let count = data.len() as u64;
+        self.enforce_capacity(count).await?;
+        self.handle_duplicate(file_path.clone()).await?;
+        if count <= self.capacity_bytes {
+            self.write_file(file_path.clone(), data).await?;
         } else {
             tracing::warn!(
                 data_len = data.len(),
@@ -163,7 +202,7 @@ impl BoundedFileStorage {
                 "Entry size is larger than the limit. Not saving.",
             );
         }
-        Ok(usage)
+        Ok(self.current_size)
     }
 
     async fn load<T: DeserializeOwned>(&self, key: &str) -> anyhow::Result<Option<T>> {
@@ -179,32 +218,54 @@ impl BoundedFileStorage {
 
     /// Delete old files to make space for the new file
     /// Returns disk usage
-    async fn enforce_capacity(&self, new_file_size: u64) -> anyhow::Result<u64> {
-        // List all files sorted by timestamp (descending)
-        let mut entries = fs::read_dir(&self.base_dir).await?;
-        let mut files = Vec::new();
-        while let Some(entry) = entries.next_entry().await? {
-            let meta = entry.metadata().await?;
-            if meta.is_file() {
-                files.push((entry.path(), meta));
+    async fn enforce_capacity(&mut self, new_file_size: u64) -> anyhow::Result<()> {
+        //Delete old files to satisfy capacity constraints\
+        while self.current_size + new_file_size > self.capacity_bytes
+            && !self.erase_queue.is_empty()
+        {
+            let (path, meta) = self.erase_queue.pop_front().unwrap();
+            let file = path.file_name().unwrap().to_str().unwrap();
+            if let Some(duplicates) = self.skip_cnt.get_mut(file) {
+                if *duplicates > 0 {
+                    *duplicates -= 1;
+                    continue;
+                }
             }
-        }
-        files.sort_by_cached_key(|(_, meta)| {
-            Reverse(meta.modified().unwrap_or(SystemTime::UNIX_EPOCH))
-        });
-
-        //Delete old files to satisfy capacity constraints
-        let mut current_size = new_file_size;
-        let mut current_count = 1;
-        let files_to_delete = files.into_iter().skip_while(|(_, meta)| {
-            current_size += meta.len();
-            current_count += 1;
-            current_count <= self.capacity_files && current_size <= self.capacity_bytes
-        });
-        for (path, _) in files_to_delete {
+            self.current_size -= meta.len();
             fs::remove_file(path).await?;
         }
-        Ok(current_size)
+        Ok(())
+    }
+
+    async fn handle_duplicate(&mut self, mut path_buf: PathBuf) -> anyhow::Result<()> {
+        if path_buf.is_file() {
+            let file_key = path_buf.file_name().unwrap().to_str().unwrap().to_string();
+            tracing::info!("Storing old version of {}", file_key);
+
+            let old_data = fs::read(&path_buf).await?;
+            fs::remove_file(&path_buf).await?;
+            self.current_size -= old_data.len() as u64;
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            path_buf.set_extension(format!("overwritten_{now}"));
+
+            self.write_file(path_buf, old_data).await?;
+            *self.skip_cnt.entry(file_key.clone()).or_insert(0) += 1;
+        }
+        Ok(())
+    }
+
+    ///Write file to disk and add it to erase_queue
+    async fn write_file(&mut self, file_path: PathBuf, data: Vec<u8>) -> anyhow::Result<()> {
+        let len = data.len() as u64;
+        fs::write(&file_path, data).await?;
+        self.current_size += len;
+        let meta = fs::metadata(&file_path).await?;
+        self.erase_queue.push_back((file_path, meta));
+        Ok(())
     }
 }
 
@@ -219,41 +280,53 @@ mod tests {
     async fn test_bounded_storage_capacity() -> anyhow::Result<()> {
         let dir = TempDir::new()?;
         let path = dir.path().to_owned();
-        let capacity_files = 600;
-        let storage = BoundedFileStorage::new(path, 1 << 20, capacity_files);
+        const LIMIT: u64 = 20000;
+        let mut storage = BoundedFileStorage::new(path, LIMIT).await?;
 
-        //verify file capacity
-        for i in 0..2000 {
-            let str: String = i.to_string();
-            storage.store(&str, &str).await?;
-            assert_eq!(storage.load::<String>(str.as_str()).await?, Some(str));
-            if i >= capacity_files {
+        //Many small files
+        let num_iter = 2000;
+        for i in 0..num_iter {
+            let key: String = i.to_string();
+            let val = "a".repeat((LIMIT / num_iter) as usize);
+            storage.store(&key, &val).await?;
+            assert_eq!(storage.load::<String>(key.as_str()).await?, Some(val));
+            if i >= num_iter {
                 assert!(
                     storage
-                        .load::<String>(&(i - capacity_files + 1).to_string())
+                        .load::<String>(&(i - num_iter + 1).to_string())
                         .await?
                         .is_some()
                 );
                 assert!(
                     storage
-                        .load::<String>(&(i - capacity_files).to_string())
+                        .load::<String>(&(i - num_iter).to_string())
                         .await?
                         .is_none()
                 );
             }
         }
 
-        //verify size capacity
-        let big_str = "a".repeat((1 << 20) - 500);
+        //Large files
+        let big_str = "a".repeat((LIMIT * 2 / 3) as usize);
         storage.store("key", &big_str).await?;
         //This removes most entries but not all
-        assert!(storage.load::<String>(&1200.to_string()).await?.is_none());
-        assert!(storage.load::<String>(&1999.to_string()).await?.is_some());
+        assert!(
+            storage
+                .load::<String>(&(num_iter / 2).to_string())
+                .await?
+                .is_none()
+        );
+        assert!(
+            storage
+                .load::<String>(&(num_iter - 1).to_string())
+                .await?
+                .is_some()
+        );
         //This should remove all the old entries
         storage.store("key2", &big_str).await?;
         assert!(storage.load::<String>("key").await?.is_none());
         //Can't store huge files -
-        let very_big = "a".repeat(1 << 21);
+        let very_big = "a".repeat((2 * LIMIT) as usize);
         storage.store("key", &very_big).await?;
         assert!(storage.load::<String>("key").await?.is_none());
 
@@ -265,13 +338,36 @@ mod tests {
         const LIMIT: u64 = 1 << 20;
         let dir = TempDir::new()?;
         let path = dir.path().to_owned();
-        let storage = BoundedFileStorage::new(path, LIMIT, 600);
+        let mut storage = BoundedFileStorage::new(path, LIMIT).await?;
+        //overrides in case of large strings
         let big_str_a = "a".repeat((LIMIT * 2 / 3) as usize);
         storage.store("key", &big_str_a).await?;
         assert_eq!(storage.load("key").await?, Some(big_str_a));
         let big_str_b = "b".repeat((LIMIT * 2 / 3) as usize);
         storage.store("key", &big_str_b).await?;
         assert_eq!(storage.load("key").await?, Some(big_str_b));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bounded_storage_overwrite_cleanup() -> anyhow::Result<()> {
+        const LIMIT: u64 = 506;
+        let dir = TempDir::new()?;
+        let path = dir.path().to_owned();
+        let mut storage = BoundedFileStorage::new(path, LIMIT).await?;
+
+        let str1 = String::from("a".repeat(100));
+        let str2 = String::from("ab".repeat(100));
+        storage.store("0", &str2).await?;
+        storage.store("1", &str2).await?;
+        storage.store("0", &str1).await?;
+        //TODO: handle acse when overwrite is the same value
+        storage.store("0", &str2).await?;
+        assert_eq!(storage.load::<String>("1").await?, None);
+        storage.store("1", &str2).await?;
+        //Duplicate was removed here
+        assert!(storage.load::<String>("0").await?.is_some());
+        assert!(storage.load::<String>("1").await?.is_some());
 
         Ok(())
     }

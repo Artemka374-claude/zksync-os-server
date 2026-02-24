@@ -810,7 +810,9 @@ async fn run_main_node_pipeline(
     committed_batch_provider: CommittedBatchProvider,
 ) {
     tracing::info!("Initializing ProofStorage");
-    let proof_storage = ProofStorage::new(config.prover_api_config.proof_storage.clone());
+    let proof_storage = ProofStorage::new(config.prover_api_config.proof_storage.clone())
+        .await
+        .unwrap();
 
     let (fri_proving_step, fri_job_manager) = FriProvingPipelineStep::new(
         proof_storage.clone(),
