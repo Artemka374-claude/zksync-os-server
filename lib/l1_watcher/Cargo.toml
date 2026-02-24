@@ -32,3 +32,4 @@ serde.workspace = true
 futures.workspace = true
 backon.workspace = true
 rangemap.workspace = true
+blake2.workspace = true
