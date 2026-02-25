@@ -38,20 +38,22 @@ impl PartialEq for SystemTxEnvelope {
 impl SystemTxEnvelope {
     /// A constructor for system transaction that imports interop roots
     pub fn import_interop_roots(roots: Vec<InteropRoot>) -> Self {
-        Self::create_from_input(SystemTxInput::ImportInteropRoots(roots))
+        // TODO: use proper salt for this tx subtype
+        Self::create_from_input(SystemTxInput::ImportInteropRoots(roots), 0)
     }
 
     /// A constructor for system transaction that sets the settlement layer chain id
-    pub fn set_sl_chain_id(chain_id: ChainId) -> Self {
-        Self::create_from_input(SystemTxInput::SetSLChainId(chain_id))
+    pub fn set_sl_chain_id(chain_id: ChainId, migration_number: u64) -> Self {
+        Self::create_from_input(SystemTxInput::SetSLChainId(chain_id), migration_number)
     }
 
-    fn create_from_input(tx_input: SystemTxInput) -> Self {
+    fn create_from_input(tx_input: SystemTxInput, salt: u64) -> Self {
         let calldata = tx_input.abi_encode();
 
         let transaction = SystemTx {
             to: tx_input.to_address(),
             input: Bytes::from(calldata),
+            salt,
         };
 
         Self {
@@ -332,7 +334,7 @@ mod tests {
         assert_eq!(
             serde_json::to_string_pretty(&tx).unwrap(),
             r#"{
-  "hash": "0x1f7117fa6190a6da113e9b7223222d3bc3b7c4c866772385e05ec79041e8f0ba",
+  "hash": "0x7bc1a669ea68562d2b22fb56757a7f85c69b286d5d4c0e1fb1b09cd8bd340aee",
   "initiator": "0x0000000000000000000000000000000000008001",
   "to": "0x0000000000000000000000000000000000010008",
   "gas": "0x0",
@@ -351,12 +353,12 @@ mod tests {
 
     #[test]
     fn set_sl_chain_id_tx_serialization() {
-        let tx = SystemTxEnvelope::set_sl_chain_id(1);
+        let tx = SystemTxEnvelope::set_sl_chain_id(1, 0);
 
         assert_eq!(
             serde_json::to_string_pretty(&tx).unwrap(),
             r#"{
-  "hash": "0x0db54bf16b232c227e16f783ea14f030ab983c67b5a2898452bc09028e0e5a4f",
+  "hash": "0x2045e379b7d45667d30c025f4cb764acfcccbf993a6744db09a4f2ad12c2981c",
   "initiator": "0x0000000000000000000000000000000000008001",
   "to": "0x000000000000000000000000000000000000800b",
   "gas": "0x0",

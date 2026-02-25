@@ -45,8 +45,8 @@ alloy::sol! {
     }
 
     interface ServerNotifier {
-        event MigrateToGateway(uint256 indexed chainId);
-        event MigrateFromGateway(uint256 indexed chainId);
+        event MigrateToGateway(uint256 indexed chainId, uint256 migrationNumber);
+        event MigrateFromGateway(uint256 indexed chainId, uint256 migrationNumber);
     }
 
     interface ISystemContext {
@@ -257,6 +257,7 @@ alloy::sol! {
             uint64 batchNumber;
             bytes32 newStateCommitment;
             uint256 numberOfLayer1Txs;
+            uint256 numberOfLayer2Txs;
             bytes32 priorityOperationsHash;
             bytes32 dependencyRootsRollingHash;
             bytes32 l2LogsTreeRoot;
@@ -268,6 +269,7 @@ alloy::sol! {
             uint64 lastBlockNumber;
             uint256 chainId;
             bytes operatorDAInput;
+            uint256 slChainId;
         }
 
         event BlockCommit(uint256 indexed batchNumber, bytes32 indexed batchHash, bytes32 indexed commitment);
@@ -334,6 +336,27 @@ alloy::sol! {
             bytes32 daCommitment;
             uint64 firstBlockTimestamp;
             uint64 lastBlockTimestamp;
+            uint256 chainId;
+            bytes operatorDAInput;
+        }
+    }
+
+    // taken from v30 version of `IExecutor.sol`
+    // This format is still required to submit v30 batches before the upgrade to v31.
+    interface IExecutorV30 {
+        struct CommitBatchInfoZKsyncOS {
+            uint64 batchNumber;
+            bytes32 newStateCommitment;
+            uint256 numberOfLayer1Txs;
+            bytes32 priorityOperationsHash;
+            bytes32 dependencyRootsRollingHash;
+            bytes32 l2LogsTreeRoot;
+            L2DACommitmentScheme daCommitmentScheme;
+            bytes32 daCommitment;
+            uint64 firstBlockTimestamp;
+            uint64 firstBlockNumber;
+            uint64 lastBlockTimestamp;
+            uint64 lastBlockNumber;
             uint256 chainId;
             bytes operatorDAInput;
         }

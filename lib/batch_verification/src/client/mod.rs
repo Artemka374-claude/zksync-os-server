@@ -269,6 +269,7 @@ impl<Finality: ReadFinality, ReadState: ReadStateHistory>
             self.diamond_proxy_sl,
             request.batch_number,
             request.pubdata_mode,
+            self.l1_state.sl_chain_id,
             aggregated_root,
             &blocks.first().unwrap().1.protocol_version,
         );
