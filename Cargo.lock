@@ -15507,6 +15507,7 @@ version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "anyhow",
  "blake2 0.10.6",
  "jsonrpsee",
  "serde",

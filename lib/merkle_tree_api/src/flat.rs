@@ -82,7 +82,8 @@ pub enum InnerStorageSlotProof {
 }
 
 impl InnerStorageSlotProof {
-    pub(crate) fn verify(&self, tree_depth: u8, key: B256) -> anyhow::Result<B256> {
+    /// Verifies this proof. `key` refers to the slot in the tree (i.e., the *flat* key in terms of ZKsync OS).
+    pub fn verify(&self, tree_depth: u8, key: B256) -> anyhow::Result<B256> {
         match self {
             Self::Existing(entry) => entry.hash(tree_depth, key),
             Self::NonExisting {
@@ -116,6 +117,14 @@ impl StorageSlotProof {
     /// Verifies the internal consistency of this proof and returns the recovered tree root hash.
     pub fn verify(&self, tree_depth: u8) -> anyhow::Result<B256> {
         self.proof.verify(tree_depth, self.key)
+    }
+
+    /// Returns the storage value for the slot.
+    pub fn value(&self) -> Option<B256> {
+        match &self.proof {
+            InnerStorageSlotProof::Existing(entry) => Some(entry.value),
+            InnerStorageSlotProof::NonExisting { .. } => None,
+        }
     }
 }
 

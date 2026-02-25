@@ -1,6 +1,6 @@
 use crate::ReadRpcStorage;
 use crate::result::ToRpcResult;
-use alloy::primitives::{Address, B256, BlockNumber, TxHash, U32, U64, keccak256};
+use alloy::primitives::{Address, B256, BlockNumber, TxHash, U64, keccak256};
 use alloy::rpc::types::Index;
 use anyhow::Context;
 use async_trait::async_trait;
@@ -218,15 +218,24 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
                 )
             })
             .collect();
-        let Some((flat_proofs, tree_output)) =
-            self.storage.tree().prove_flat(batch_number, &flat_keys)?
+        // We query tree version by the *block* number because the tree is updated on each block,
+        // rather than once per batch.
+        let Some((mut flat_proofs, tree_output)) = self
+            .storage
+            .tree()
+            .prove_flat(last_block_number, &flat_keys)?
         else {
             return Ok(None);
         };
 
+        // Swap flat keys in the proofs back to address-scoped keys
+        for (proof, &key) in flat_proofs.iter_mut().zip(keys) {
+            proof.key = key;
+        }
+
         let state_commitment_preimage = StateCommitmentPreimage {
             next_free_slot: U64::from(tree_output.leaf_count),
-            block_number: U32::from(last_block_number),
+            block_number: U64::from(last_block_number),
             last_256_block_hashes_blake,
             last_block_timestamp: U64::from(batch.batch_info.last_block_timestamp),
         };

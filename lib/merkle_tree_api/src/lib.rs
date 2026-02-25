@@ -7,7 +7,7 @@ pub use zksync_os_crypto::hasher::{Hasher, blake2::Blake2Hasher};
 
 pub use crate::{
     hasher::HashTree,
-    proofs::{BatchTreeProof, IntermediateHash, TreeOperation},
+    proofs::{BatchTreeProof, IntermediateHash, MerkleTreeView, TreeOperation},
     types::{Leaf, MAX_TREE_DEPTH, TreeBatchOutput, TreeEntry},
 };
 

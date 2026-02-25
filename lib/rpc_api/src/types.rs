@@ -1,7 +1,8 @@
 use alloy::consensus::Sealed;
 use alloy::network::primitives::BlockTransactions;
-use alloy::primitives::{Address, B256, BlockHash, TxHash, U32, U64, U256};
+use alloy::primitives::{Address, B256, BlockHash, TxHash, U64, U256};
 use alloy::rpc::types::Log;
+use anyhow::Context;
 use blake2::{Blake2s256, Digest};
 use jsonrpsee::core::Serialize;
 use serde::Deserialize;
@@ -117,7 +118,7 @@ impl From<L2ToL1Log> for zksync_os_types::L2ToL1Log {
 #[serde(rename_all = "camelCase")]
 pub struct StateCommitmentPreimage {
     pub next_free_slot: U64,
-    pub block_number: U32,
+    pub block_number: U64,
     pub last_256_block_hashes_blake: B256,
     pub last_block_timestamp: U64,
 }
@@ -128,7 +129,7 @@ impl StateCommitmentPreimage {
         let mut hasher = Blake2s256::new();
         hasher.update(tree_root_hash.as_slice());
         hasher.update(self.next_free_slot.to_be_bytes::<8>());
-        hasher.update(self.block_number.to_be_bytes::<4>());
+        hasher.update(self.block_number.to_be_bytes::<8>());
         hasher.update(self.last_256_block_hashes_blake);
         hasher.update(self.last_block_timestamp.to_be_bytes::<8>());
         B256::from_slice(&hasher.finalize())
@@ -141,4 +142,79 @@ pub struct BatchStorageProof {
     pub address: Address,
     pub state_commitment_preimage: StateCommitmentPreimage,
     pub storage_proofs: Vec<flat::StorageSlotProof>,
+}
+
+impl BatchStorageProof {
+    const TREE_DEPTH: u8 = 64;
+
+    // There's a similar function in `zk_ee`, but it relies on multiple unstable features.
+    pub fn derive_flat_key(address: Address, key: B256) -> B256 {
+        let mut hasher = Blake2s256::new();
+        hasher.update([0_u8; 12]); // address padding
+        hasher.update(address.0);
+        hasher.update(key.0);
+        B256::from_slice(&hasher.finalize())
+    }
+
+    /// Verifies this proof.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `queried_keys` is empty (the proof would be useless in this case).
+    pub fn verify(
+        &self,
+        queried_address: Address,
+        queried_keys: &[B256],
+    ) -> anyhow::Result<StorageView> {
+        assert!(!queried_keys.is_empty(), "useless proof");
+
+        anyhow::ensure!(
+            self.address == queried_address,
+            "Mismatched address: queried {queried_address:?}, got {:?}",
+            self.address
+        );
+        let actual_keys = self.storage_proofs.iter().map(|proof| proof.key);
+        anyhow::ensure!(
+            actual_keys.clone().eq(queried_keys.iter().copied()),
+            "Mismatched proven slots: queried {queried_keys:?}, got {:?}",
+            actual_keys.collect::<Vec<_>>()
+        );
+
+        let mut cached_tree_root_hash = None;
+        let mut storage_values = Vec::with_capacity(self.storage_proofs.len());
+        for proof in &self.storage_proofs {
+            let flat_key = Self::derive_flat_key(self.address, proof.key);
+            let tree_root_hash = proof
+                .proof
+                .verify(Self::TREE_DEPTH, flat_key)
+                .with_context(|| format!("invalid proof for key {:?}", proof.key))?;
+            if let Some(cached) = cached_tree_root_hash {
+                anyhow::ensure!(
+                    cached == tree_root_hash,
+                    "Tree root hash mismatch for key {:?}: expected {cached:?}, got {tree_root_hash:?}",
+                    proof.key,
+                );
+            } else {
+                cached_tree_root_hash = Some(tree_root_hash);
+            }
+
+            storage_values.push(proof.value());
+        }
+
+        // `unwrap()` is safe due to checks above.
+        let tree_root_hash = cached_tree_root_hash.unwrap();
+        Ok(StorageView {
+            storage_commitment: self.state_commitment_preimage.hash(tree_root_hash),
+            storage_values,
+        })
+    }
+}
+
+/// Proven view of the storage returned from [`BatchStorageProof::verify()`].
+#[derive(Debug)]
+pub struct StorageView {
+    /// Storage commitment hash. In most cases, must be checked against L1.
+    pub storage_commitment: B256,
+    /// Proven storage values in the order of queried keys.
+    pub storage_values: Vec<Option<B256>>,
 }
