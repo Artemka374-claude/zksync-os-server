@@ -15492,6 +15492,7 @@ dependencies = [
  "zksync_os_interface",
  "zksync_os_l1_watcher",
  "zksync_os_mempool",
+ "zksync_os_merkle_tree_api",
  "zksync_os_metadata",
  "zksync_os_mini_merkle_tree",
  "zksync_os_multivm",
@@ -15506,6 +15507,7 @@ version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "blake2 0.10.6",
  "jsonrpsee",
  "serde",
  "zksync_os_genesis",

@@ -6,7 +6,9 @@ use anyhow::Context;
 use async_trait::async_trait;
 use blake2::{Blake2s256, Digest};
 use jsonrpsee::core::RpcResult;
+use ruint::aliases::B160;
 use std::sync::Arc;
+use zk_ee::common_structs::derive_flat_storage_key;
 use zksync_os_genesis::{GenesisInput, GenesisInputSource};
 use zksync_os_l1_watcher::CommittedBatchProvider;
 use zksync_os_mini_merkle_tree::MiniMerkleTree;
@@ -172,7 +174,7 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
     async fn get_proof_impl(
         &self,
         address: Address,
-        _keys: &[B256],
+        keys: &[B256],
         batch_number: u64,
     ) -> ZksResult<Option<BatchStorageProof>> {
         let Some(batch) = self.storage.batch().get_batch_by_number(batch_number)? else {
@@ -207,15 +209,42 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
             B256::from_slice(&blocks_hasher.finalize())
         };
 
+        let address_for_keys = B160::from_be_bytes(address.into_array());
+        let flat_keys: Vec<_> = keys
+            .iter()
+            .map(|account_key| {
+                B256::new(
+                    derive_flat_storage_key(&address_for_keys, &account_key.0.into()).as_u8_array(),
+                )
+            })
+            .collect();
+        let Some((flat_proofs, tree_output)) =
+            self.storage.tree().prove_flat(batch_number, &flat_keys)?
+        else {
+            return Ok(None);
+        };
+
+        let state_commitment_preimage = StateCommitmentPreimage {
+            next_free_slot: U64::from(tree_output.leaf_count),
+            block_number: U32::from(last_block_number),
+            last_256_block_hashes_blake,
+            last_block_timestamp: U64::from(batch.batch_info.last_block_timestamp),
+        };
+
+        let recovered = state_commitment_preimage.hash(tree_output.root_hash);
+        if batch.batch_info.state_commitment != recovered {
+            let err = anyhow::anyhow!(
+                "Mismatch between stored ({stored:?}) and recovered ({recovered:?}) state commitments \
+                 for batch #{batch_number}; preimage = {state_commitment_preimage:?}, tree_output = {tree_output:?}",
+                stored = batch.batch_info.state_commitment
+            );
+            return Err(err.into());
+        }
+
         Ok(Some(BatchStorageProof {
             address,
-            state_commitment_preimage: StateCommitmentPreimage {
-                next_free_slot: Default::default(), // FIXME: from tree
-                block_number: U32::from(last_block_number),
-                last_256_block_hashes_blake,
-                last_block_timestamp: U64::from(batch.batch_info.last_block_timestamp),
-            },
-            storage_proofs: vec![], // FIXME: from tree
+            state_commitment_preimage,
+            storage_proofs: flat_proofs,
         }))
     }
 }

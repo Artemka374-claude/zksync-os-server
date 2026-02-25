@@ -241,6 +241,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         .root_info()
         .expect("Failed to get genesis root info");
     let tree_db = tree_at_genesis.tree;
+    let tree_for_rpc = Arc::new(tree_db.clone());
 
     // todo: this can take a while; ideally committed batches should be loaded in the background
     //       and then `get()` method can be made async so that it waits for relevant batch to load
@@ -763,6 +764,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
         finality_storage,
         persistent_batch_storage,
         state,
+        tree_for_rpc,
     );
     tasks.spawn(
         run_jsonrpsee_server(

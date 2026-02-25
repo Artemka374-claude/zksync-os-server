@@ -2,6 +2,7 @@ use alloy::consensus::Sealed;
 use alloy::network::primitives::BlockTransactions;
 use alloy::primitives::{Address, B256, BlockHash, TxHash, U32, U64, U256};
 use alloy::rpc::types::Log;
+use blake2::{Blake2s256, Digest};
 use jsonrpsee::core::Serialize;
 use serde::Deserialize;
 use zksync_os_merkle_tree_api::flat;
@@ -119,6 +120,19 @@ pub struct StateCommitmentPreimage {
     pub block_number: U32,
     pub last_256_block_hashes_blake: B256,
     pub last_block_timestamp: U64,
+}
+
+impl StateCommitmentPreimage {
+    /// Hashes this preimage together with the provided state commitment, resulting the state commitment hash.
+    pub fn hash(&self, tree_root_hash: B256) -> B256 {
+        let mut hasher = Blake2s256::new();
+        hasher.update(tree_root_hash.as_slice());
+        hasher.update(self.next_free_slot.to_be_bytes::<8>());
+        hasher.update(self.block_number.to_be_bytes::<4>());
+        hasher.update(self.last_256_block_hashes_blake);
+        hasher.update(self.last_block_timestamp.to_be_bytes::<8>());
+        B256::from_slice(&hasher.finalize())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
