@@ -45,6 +45,7 @@ pub struct BatcherStartupConfig {
 pub struct Batcher<ReadState> {
     pub startup_config: BatcherStartupConfig,
     pub chain_id: u64,
+    pub sl_chain_id: u64,
     pub chain_address_sl: Address,
     pub pubdata_limit_bytes: u64,
     pub batcher_config: BatcherConfig,
@@ -326,6 +327,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
             // we need to adapt pubdata mode depending on protocol version, to ensure automatic DA mode change during v30 upgrade
             self.pubdata_mode
                 .adapt_for_protocol_version(protocol_version),
+            self.sl_chain_id,
             &self.read_state,
         )?;
         Ok(batch_envelope)
@@ -394,6 +396,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
             self.chain_address_sl,
             // Assume pubdata mode does not change
             self.pubdata_mode,
+            self.sl_chain_id,
             &self.read_state,
         )?;
 
