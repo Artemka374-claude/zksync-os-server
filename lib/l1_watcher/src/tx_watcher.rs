@@ -92,8 +92,6 @@ impl ProcessL1Event for L1TxWatcher {
                 hash = ?tx.hash(),
                 "skipping already processed priority transaction",
             );
-
-            Ok(())
         } else {
             if let Some(total_priority_ops) = self.cached_total_priority_ops_resp
                 && total_priority_ops > tx.priority_id()
@@ -125,7 +123,7 @@ impl ProcessL1Event for L1TxWatcher {
                 "sending new priority transaction for processing",
             );
             self.l1_subpool.insert(Arc::new(tx)).await;
-            Ok(())
         }
+        Ok(())
     }
 }

@@ -100,14 +100,17 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
                 .merkle_root_and_path(l1_log_index);
 
         let state = self.storage.state_view_at(*batch.block_range.end())?;
-        let root_pre_v31 = keccak256([local_root.0, [0u8; 32]].concat());
-        let (aggregated_root, root) = if batch.batch_info.l2_to_l1_logs_root_hash == root_pre_v31 {
-            (B256::new([0u8; 32]), root_pre_v31)
+        let last_block_replay_record = self
+            .storage
+            .replay_storage()
+            .get_replay_record(*batch.block_range.end())
+            .ok_or(ZksError::BlockNotAvailable(*batch.block_range.end()))?;
+        let aggregated_root = if last_block_replay_record.protocol_version.is_post_v31() {
+            B256::new([0u8; 32])
         } else {
-            let aggregated_root = read_aggregated_root(state);
-            let root = keccak256([local_root.0, aggregated_root.0].concat());
-            (aggregated_root, root)
+            read_aggregated_root(state)
         };
+        let root = keccak256([local_root.0, aggregated_root.0].concat());
 
         let log_leaf_proof = proof
             .into_iter()
