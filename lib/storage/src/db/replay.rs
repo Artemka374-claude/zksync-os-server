@@ -200,6 +200,17 @@ impl BlockReplayStorage {
             &starting_interop_event_index_value,
         );
 
+        let starting_migration_number_value = bincode::serde::encode_to_vec(
+            &record.starting_migration_number,
+            bincode::config::standard(),
+        )
+        .expect("Failed to serialize record.starting_migration_number");
+        batch.put_cf(
+            BlockReplayColumnFamily::StartingMigrationNumber,
+            &db_key,
+            &starting_migration_number_value,
+        );
+
         self.db
             .write(batch)
             .expect("Failed to write to block replay storage");
