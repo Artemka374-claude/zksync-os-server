@@ -8,8 +8,7 @@ use zk_os_forward_system_0_1_1::run::RunBlockForward as RunBlockForwardV4;
 use zk_os_forward_system_0_2_7::run::RunBlockForward as RunBlockForwardV5Simulation;
 use zk_os_forward_system_dev::run::RunBlockForward as RunBlockForwardV6;
 use zksync_os_interface::error::InvalidTransaction;
-use zksync_os_interface::tracing::AnyTracer;
-use zksync_os_interface::tracing::NopValidator;
+use zksync_os_interface::tracing::{AnyTracer, NopValidator};
 use zksync_os_interface::traits::{
     EncodedTx, PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
 };

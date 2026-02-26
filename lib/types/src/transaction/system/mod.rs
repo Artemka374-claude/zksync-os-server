@@ -39,21 +39,21 @@ impl SystemTxEnvelope {
     /// A constructor for system transaction that imports interop roots
     pub fn import_interop_roots(roots: Vec<InteropRoot>) -> Self {
         // TODO: use proper salt for this tx subtype
-        Self::create_from_input(SystemTxInput::ImportInteropRoots(roots), 0)
+        Self::create_from_input(SystemTxInput::ImportInteropRoots(roots))
     }
 
     /// A constructor for system transaction that sets the settlement layer chain id
-    pub fn set_sl_chain_id(chain_id: ChainId, migration_number: u64) -> Self {
-        Self::create_from_input(SystemTxInput::SetSLChainId(chain_id), migration_number)
+    pub fn set_sl_chain_id(chain_id: ChainId) -> Self {
+        Self::create_from_input(SystemTxInput::SetSLChainId(chain_id))
     }
 
-    fn create_from_input(tx_input: SystemTxInput, salt: u64) -> Self {
+    fn create_from_input(tx_input: SystemTxInput) -> Self {
         let calldata = tx_input.abi_encode();
 
         let transaction = SystemTx {
             to: tx_input.to_address(),
             input: Bytes::from(calldata),
-            salt,
+            salt: 0,
         };
 
         Self {
@@ -143,7 +143,7 @@ mod tx_serde {
 }
 
 /// A helper struct to store the block number and index in block of published interop roots event.
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct InteropRootsLogIndex {
     /// Block number from which event was published.
     pub block_number: u64,
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn set_sl_chain_id_tx_serialization() {
-        let tx = SystemTxEnvelope::set_sl_chain_id(1, 0);
+        let tx = SystemTxEnvelope::set_sl_chain_id(1);
 
         assert_eq!(
             serde_json::to_string_pretty(&tx).unwrap(),

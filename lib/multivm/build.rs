@@ -10,7 +10,7 @@ fn parse_git_tag(package_id: &PackageId) -> anyhow::Result<String> {
     Ok(tag.to_string())
 }
 
-pub fn proving_version_from_tag(tag: &str) -> Option<String> {
+fn proving_version_from_tag(tag: &str) -> Option<String> {
     match tag {
         "v0.2.7-interface-v0.0.13" => Some(String::from("V6")),
         _ => None,
@@ -55,6 +55,7 @@ fn main() {
             }
 
             println!("cargo:rustc-env=ZKSYNC_OS_{proving_version}_SOURCE_PATH={dir}");
+            continue;
         }
     }
 }

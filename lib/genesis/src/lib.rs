@@ -243,13 +243,6 @@ async fn build_genesis(
         ));
     }
 
-    for (hash, preimage) in genesis_input.additional_preimages {
-        preimages.push((
-            hash,
-            hex::decode(preimage).expect("Failed to decode preimage"),
-        ));
-    }
-
     // 1) Insert RAW additional storage first
     for (key, value) in genesis_input.additional_storage_raw {
         let duplicate = storage_logs.insert(key, value).is_some();
@@ -271,6 +264,13 @@ async fn build_genesis(
                  This likely conflicts with additional_storage_raw."
             );
         }
+    }
+
+    for (hash, preimage) in genesis_input.additional_preimages {
+        preimages.push((
+            hash,
+            hex::decode(preimage).expect("Failed to decode preimage"),
+        ));
     }
 
     let header = Header {

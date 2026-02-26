@@ -282,7 +282,7 @@ async fn fund_wallet_via_l1_deposit(tester: &Tester, wallet: Address, amount: U2
         }))
         .await?;
     let max_fee_per_gas = base_l1_fees_data.max_fee_per_gas + max_priority_fee_per_gas;
-    // TODO: gas estimation for L1 txs is most likely broken on zksync-os dev side, so we multiply by 2.
+    // todo: temporary measure, most likely the issue comes from zksync-os, should be removed once it's fixed on zksync-os side
     let gas_limit = tester
         .l2_provider
         .estimate_gas(

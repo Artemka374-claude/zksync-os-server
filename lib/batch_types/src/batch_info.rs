@@ -60,7 +60,7 @@ impl BatchInfo {
 
             for tx in transactions {
                 match tx.envelope() {
-                    ZkEnvelope::System(_) => {
+                    ZkEnvelope::System(_) | ZkEnvelope::L2(_) => {
                         number_of_layer2_txs += 1;
                     }
                     ZkEnvelope::L1(l1_tx) => {
@@ -68,9 +68,6 @@ impl BatchInfo {
                         priority_operations_hash =
                             keccak256([priority_operations_hash.0, onchain_data_hash.0].concat());
                         number_of_layer1_txs += 1;
-                    }
-                    ZkEnvelope::L2(_) => {
-                        number_of_layer2_txs += 1;
                     }
                     ZkEnvelope::Upgrade(_) => {
                         assert!(
@@ -173,7 +170,7 @@ impl BatchInfo {
         let upgrade_tx_hash = self.upgrade_tx_hash.unwrap_or(B256::ZERO);
         match protocol_version.minor {
             // v30 and v31 use different packed layouts for batch output hash:
-            // v31 inserts number_of_layer2_txs between L1 tx count and priority_operations_hash and sl_chain_id at the end.
+            // v31 inserts number_of_layer2_txs between L1 tx count and priority_operations_hash; and sl_chain_id at the end.
             30 => B256::from(keccak256(
                 (
                     U256::from(commit_info.chain_id),

@@ -14862,7 +14862,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_base_token_adjuster"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -14878,7 +14878,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_batch_types"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "basic_system 0.1.0 (git+https://github.com/matter-labs/zksync-os?tag=v0.2.7-interface-v0.0.13)",
@@ -14895,7 +14895,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_batch_verification"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -14931,7 +14931,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_contract_interface"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -14945,7 +14945,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_crypto"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "blake2 0.10.6",
@@ -14960,7 +14960,7 @@ checksum = "8fea4915ff8302cbd66403de07518fe4025fbcacd3d3d1760cc03029e710586a"
 
 [[package]]
 name = "zksync_os_external_price_api"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15006,7 +15006,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_gas_adjuster"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15021,7 +15021,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_generate_deposit"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15033,7 +15033,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_genesis"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15053,7 +15053,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_integration_tests"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15098,7 +15098,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_internal_config"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15109,7 +15109,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_l1_sender"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15140,7 +15140,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_l1_watcher"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15165,7 +15165,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_mempool"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "auto_impl",
@@ -15187,7 +15187,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_merkle_tree"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15216,14 +15216,14 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_metadata"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "semver 1.0.26",
 ]
 
 [[package]]
 name = "zksync_os_mini_merkle_tree"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "criterion",
@@ -15234,7 +15234,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_multivm"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15253,7 +15253,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_network"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
@@ -15281,7 +15281,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_object_store"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -15302,7 +15302,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_observability"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -15328,7 +15328,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_pipeline"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -15339,7 +15339,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_priority_tree"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15385,7 +15385,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_reth_compat"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "reth-chainspec",
@@ -15399,7 +15399,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_revm_consistency_checker"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15437,7 +15437,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_rocksdb"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "num_cpus",
  "once_cell",
@@ -15450,7 +15450,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_rpc"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15493,7 +15493,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_rpc_api"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
@@ -15561,7 +15561,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_sequencer"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15593,7 +15593,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_server"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15689,7 +15689,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_state"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15708,7 +15708,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_state_full_diffs"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15726,7 +15726,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_status_server"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -15737,7 +15737,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_storage"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -15758,7 +15758,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_storage_api"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
@@ -15785,7 +15785,7 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_types"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
