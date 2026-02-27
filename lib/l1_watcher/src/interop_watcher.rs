@@ -79,7 +79,7 @@ impl ProcessL1Event for InteropWatcher {
 
         let interop_root = InteropRoot {
             chainId: tx.chainId,
-            blockOrBatchNumber: tx.blockOrBatchNumber,
+            blockOrBatchNumber: tx.blockNumber,
             sides: tx.sides,
         };
 
