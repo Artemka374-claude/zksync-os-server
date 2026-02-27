@@ -1,6 +1,6 @@
 use alloy::rpc::types::Log;
 use alloy::{primitives::Address, providers::DynProvider};
-use zksync_os_contract_interface::IMessageRoot::AppendedChainRoot;
+use zksync_os_contract_interface::IMessageRoot::NewInteropRoot;
 use zksync_os_contract_interface::{Bridgehub, InteropRoot};
 use zksync_os_mempool::subpools::interop_roots::InteropRootsSubpool;
 use zksync_os_types::{IndexedInteropRoot, InteropRootsLogIndex};
@@ -51,8 +51,8 @@ impl InteropWatcher {
 impl ProcessL1Event for InteropWatcher {
     const NAME: &'static str = "interop_root";
 
-    type SolEvent = AppendedChainRoot;
-    type WatchedEvent = AppendedChainRoot;
+    type SolEvent = NewInteropRoot;
+    type WatchedEvent = NewInteropRoot;
 
     fn contract_address(&self) -> Address {
         self.contract_address
@@ -60,7 +60,7 @@ impl ProcessL1Event for InteropWatcher {
 
     async fn process_event(
         &mut self,
-        tx: AppendedChainRoot,
+        tx: NewInteropRoot,
         log: Log,
     ) -> Result<(), L1WatcherError> {
         let current_log_index = InteropRootsLogIndex {
@@ -79,8 +79,8 @@ impl ProcessL1Event for InteropWatcher {
 
         let interop_root = InteropRoot {
             chainId: tx.chainId,
-            blockOrBatchNumber: tx.batchNumber,
-            sides: vec![tx.chainRoot],
+            blockOrBatchNumber: tx.blockOrBatchNumber,
+            sides: tx.sides,
         };
 
         self.interop_roots_subpool
