@@ -201,7 +201,7 @@ impl BlockReplayStorage {
         );
 
         let starting_migration_number_value = bincode::serde::encode_to_vec(
-            &record.starting_migration_number,
+            record.starting_migration_number,
             bincode::config::standard(),
         )
         .expect("Failed to serialize record.starting_migration_number");
