@@ -187,7 +187,8 @@ impl<T: L2Subpool> Pool<T> {
             .interop_roots_subpool
             .on_canonical_state_change(interop_txs)
             .await;
-        self.sl_chain_id_subpool
+        let last_migration_number = self
+            .sl_chain_id_subpool
             .on_canonical_state_change(sl_chain_id_txs)
             .await;
         let last_l1_priority_id = self
@@ -220,6 +221,7 @@ impl<T: L2Subpool> Pool<T> {
         StateChangeOutcome {
             last_interop_log_index,
             last_l1_priority_id,
+            last_migration_number,
         }
     }
 }
@@ -239,6 +241,8 @@ pub struct StateChangeOutcome {
     pub last_interop_log_index: Option<InteropRootsLogIndex>,
     /// Last L1 priority ID that was executed after canonical state change.
     pub last_l1_priority_id: Option<L1TxSerialId>,
+    /// Last migration number that was executed after canonical state change.
+    pub last_migration_number: Option<u64>,
 }
 
 /// Transaction stream that is capable of marking last L2 transaction as invalid.

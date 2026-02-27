@@ -21,8 +21,8 @@ pub const SYSTEM_TX_TYPE_ID: u8 = 125;
 pub enum SystemTxType {
     /// Transaction subtype for importing interop roots, contains the number of interop roots imported
     ImportInteropRoots(u64),
-    /// Transaction subtype for setting the settlement layer chain id
-    SetSLChainId,
+    /// Transaction subtype for setting the settlement layer chain id, contains migration number
+    SetSLChainId(u64),
 }
 
 /// Helper type to encode/decode system transaction input and determine it's subtype

@@ -102,7 +102,9 @@ impl SystemTxEnvelope {
                 SystemTxInput::ImportInteropRoots(roots) => {
                     SystemTxType::ImportInteropRoots(roots.len() as u64)
                 }
-                SystemTxInput::SetSLChainId(_, _) => SystemTxType::SetSLChainId,
+                SystemTxInput::SetSLChainId(_, migration_number) => {
+                    SystemTxType::SetSLChainId(migration_number)
+                }
             }
         })
     }

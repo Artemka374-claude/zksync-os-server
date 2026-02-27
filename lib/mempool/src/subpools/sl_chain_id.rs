@@ -78,15 +78,22 @@ impl SlChainIdSubpool {
         }
     }
 
-    pub async fn on_canonical_state_change(&self, txs: Vec<&SystemTxEnvelope>) {
+    pub async fn on_canonical_state_change(&self, txs: Vec<&SystemTxEnvelope>) -> Option<u64> {
         if txs.is_empty() {
             return;
         }
 
+        let mut last_migration_number = None;
+
         for tx in txs {
             let pending_tx = self.pop_wait().await;
             assert_eq!(tx, &pending_tx);
+
+            if let SystemTxType::SetSLChainId(migration_number) = *tx.system_subtype() {
+                last_migration_number = Some(migration_number);
+            }
         }
+        last_migration_number
     }
 }
 

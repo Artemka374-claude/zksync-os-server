@@ -328,6 +328,10 @@ impl<Subpool: L2Subpool> BlockContextProvider<Subpool> {
             };
         }
 
+        if let Some(last_migration_number) = outcome.last_migration_number {
+            self.next_migration_number = last_migration_number + 1;
+        }
+
         // We update protocol version here, so that we take into account replay records with protocol version bumps.
         self.protocol_version = replay_record.protocol_version.clone();
 
