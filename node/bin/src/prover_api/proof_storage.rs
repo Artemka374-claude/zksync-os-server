@@ -137,7 +137,7 @@ struct BoundedFileStorage {
     base_dir: PathBuf,
     capacity_bytes: u64,
     current_size: u64,
-    erase_queue: VecDeque<(PathBuf, Metadata)>,
+    erase_queue: VecDeque<(String, Metadata)>,
     // `value` is the number of times the `key` has been moved back in `erase_queue`
     // So while this number is not zero we won't erase the file, but decrement this
     skip_cnt: HashMap<String, u64>,
@@ -152,7 +152,7 @@ impl BoundedFileStorage {
         while let Some(entry) = entries.next_entry().await? {
             let meta = entry.metadata().await?;
             if meta.is_file() {
-                files.push((entry.path(), meta));
+                files.push((entry.file_name().into_string().unwrap(), meta));
             }
         }
         files.sort_by_cached_key(|(_, meta)| meta.modified().unwrap_or(SystemTime::UNIX_EPOCH));
@@ -221,16 +221,16 @@ impl BoundedFileStorage {
         while self.current_size + new_file_size > self.capacity_bytes
             && !self.erase_queue.is_empty()
         {
-            let (path, meta) = self.erase_queue.pop_front().unwrap();
-            let file = path.file_name().unwrap().to_str().unwrap();
-            if let Some(duplicates) = self.skip_cnt.get_mut(file)
+            let (key, meta) = self.erase_queue.pop_front().unwrap();
+            if let Some(duplicates) = self.skip_cnt.get_mut(&key)
                 && *duplicates > 0
             {
                 *duplicates -= 1;
                 continue;
             }
+
+            fs::remove_file(self.base_dir.join(key)).await?;
             self.current_size -= meta.len();
-            fs::remove_file(path).await?;
         }
         Ok(())
     }
@@ -265,7 +265,7 @@ impl BoundedFileStorage {
         fs::write(&path, data).await?;
         self.current_size += len;
         let meta = fs::metadata(&path).await?;
-        self.erase_queue.push_back((path, meta));
+        self.erase_queue.push_back((key.to_string(), meta));
         Ok(())
     }
 }
