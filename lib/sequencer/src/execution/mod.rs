@@ -110,7 +110,7 @@ where
 
             let prepared_command = self.block_context_provider.prepare_command(cmd).await?;
 
-            tracing::debug!(
+            tracing::info!(
                 block_number,
                 starting_l1_priority_id = prepared_command.starting_l1_priority_id,
                 "Prepared command. Executing..",
@@ -138,7 +138,7 @@ where
             }
             last_processed_block_at = Some(Instant::now());
 
-            tracing::debug!(block_number, "Executed. Adding to block replay storage...");
+            tracing::info!(block_number, "Executed. Adding to block replay storage...");
             latency_tracker.enter_state(SequencerState::AddingToReplayStorage);
 
             self.replay.write(
@@ -146,7 +146,7 @@ where
                 override_allowed,
             );
 
-            tracing::debug!(block_number, "Added to replay storage. Adding to state...");
+            tracing::info!(block_number, "Added to replay storage. Adding to state...");
             latency_tracker.enter_state(SequencerState::AddingToState);
 
             // Although, the plan is to always allow overrides for each storage except for replay,
@@ -163,7 +163,7 @@ where
                 override_allowed,
             )?;
 
-            tracing::debug!(block_number, "Added to state. Adding to repos...");
+            tracing::info!(block_number, "Added to state. Adding to repos...");
             latency_tracker.enter_state(SequencerState::AddingToRepos);
 
             // todo: do not call if api is not enabled.
@@ -171,7 +171,7 @@ where
                 .populate(block_output.clone(), replay_record.transactions.clone())
                 .await?;
 
-            tracing::debug!(block_number, "Added to repos. Updating mempools...",);
+            tracing::info!(block_number, "Added to repos. Updating mempools...",);
             latency_tracker.enter_state(SequencerState::UpdatingMempool);
 
             // TODO: would updating mempool in parallel with state make sense?
@@ -182,7 +182,7 @@ where
             self.block_context_provider
                 .remove_transactions(purged_txs_hashes);
 
-            tracing::debug!(
+            tracing::info!(
                 block_number,
                 time_since_last_block = ?time_since_last_block,
                 "Block processed in sequencer! Sending downstream..."
@@ -201,7 +201,7 @@ where
                 anyhow::bail!("Outbound channel closed");
             }
 
-            tracing::debug!(block_number, "Block fully processed");
+            tracing::info!(block_number, "Block fully processed");
         }
     }
 }

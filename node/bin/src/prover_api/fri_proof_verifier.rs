@@ -18,12 +18,12 @@ pub fn verify_fri_proof(
 
     let proof_final_register_values: [u32; 16] = extract_final_register_values(proof);
 
-    tracing::debug!(
+    tracing::info!(
         batch_number = stored_batch_info.batch_number,
         "Program final registers: {:?}",
         proof_final_register_values
     );
-    tracing::debug!(
+    tracing::info!(
         batch_number = stored_batch_info.batch_number,
         ?previous_state_commitment,
         ?stored_batch_info,

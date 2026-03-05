@@ -62,7 +62,7 @@ impl PipelineComponent for TreeManager {
                 })
                 .await??;
             }
-            tracing::debug!(
+            tracing::info!(
                 "Processing {} storage writes in tree for block {}",
                 block_output.storage_writes.len(),
                 block_number
@@ -87,7 +87,7 @@ impl PipelineComponent for TreeManager {
                 .expect("uninitialized tree after applying a block");
             assert_eq!(last_processed_block, block_number);
 
-            tracing::debug!(
+            tracing::info!(
                 block_number = block_number,
                 next_free_slot = tree_batch_output.leaf_count,
                 "Processed {} entries in tree, output: {:?}",

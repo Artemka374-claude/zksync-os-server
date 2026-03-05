@@ -97,7 +97,7 @@ impl FeeProvider {
             native_price,
             pubdata_price,
         };
-        tracing::debug!(?fee_params, "Produced fee params");
+        tracing::info!(?fee_params, "Produced fee params");
 
         Ok(fee_params)
     }
@@ -142,7 +142,7 @@ impl FeeProvider {
         let native_price = desired_native_price
             .clone()
             .clamp(min_native_price.clone(), max_native_price.clone());
-        tracing::debug!(
+        tracing::info!(
             %native_price,
             %desired_native_price,
             %min_native_price,
@@ -217,7 +217,7 @@ impl FeeProvider {
                 r.to_integer()
             };
 
-            tracing::debug!(
+            tracing::info!(
                 desired_pubdata_price = %pubdata_price,
                 %base_pubdata_price,
                 %native_overhead,
@@ -247,7 +247,7 @@ impl FeeProvider {
             };
 
             if capped_price < desired_pubdata_price {
-                tracing::debug!(
+                tracing::info!(
                     %capped_price,
                     %prev_pubdata_price,
                     %desired_pubdata_price,
@@ -262,7 +262,7 @@ impl FeeProvider {
         if let Some(cap) = self.fee_config.pubdata_price_cap.clone()
             && pubdata_price > cap
         {
-            tracing::debug!(
+            tracing::info!(
                 %cap,
                 %pubdata_price,
                 "Capping pubdata price according to config",

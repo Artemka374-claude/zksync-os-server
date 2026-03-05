@@ -55,7 +55,7 @@ impl<Replay: ReadReplay> PipelineComponent for MainNodeCommandSource<Replay> {
         );
 
         while let Some(command) = stream.next().await {
-            tracing::debug!(?command, "Sending block command");
+            tracing::info!(?command, "Sending block command");
             if output.send(command).await.is_err() {
                 tracing::warn!("Command output channel closed, stopping source");
                 break;
@@ -81,7 +81,7 @@ impl PipelineComponent for ExternalNodeCommandSource {
     ) -> anyhow::Result<()> {
         while let Some(record) = self.replays_for_sequencer.recv().await {
             let command = BlockCommand::Replay(Box::new(record));
-            tracing::debug!(?command, "Received block command from main node");
+            tracing::info!(?command, "Received block command from main node");
 
             if let Some(up_to_block) = self.up_to_block
                 && command.block_number() > up_to_block

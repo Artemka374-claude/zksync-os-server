@@ -106,7 +106,7 @@ impl BatchInfoAccumulator {
         // Otherwise, we will end up in a situation where the first block is never included in any batch.
         if self.has_upgrade_tx && self.block_count > 1 {
             BATCHER_METRICS.seal_reason[&"upgrade_tx"].inc();
-            tracing::debug!("Batcher: sealing batch due to upgrade transaction");
+            tracing::info!("Batcher: sealing batch due to upgrade transaction");
             return true;
         }
 
@@ -114,43 +114,43 @@ impl BatchInfoAccumulator {
         // batch to make sure that all the blocks within a batch have the same protocol version.
         if self.protocol_versions.len() > 1 {
             BATCHER_METRICS.seal_reason[&"protocol_version_change"].inc();
-            tracing::debug!("Batcher: protocol version changed within the batch");
+            tracing::info!("Batcher: protocol version changed within the batch");
             return true;
         }
 
         if self.block_count > self.blocks_per_batch_limit {
             BATCHER_METRICS.seal_reason[&"blocks_per_batch"].inc();
-            tracing::debug!("Batcher: reached blocks per batch limit");
+            tracing::info!("Batcher: reached blocks per batch limit");
             return true;
         }
 
         if self.tx_count > self.tx_per_batch_limit {
             BATCHER_METRICS.seal_reason[&"tx_per_batch"].inc();
-            tracing::debug!("Batcher: reached tx per batch limit");
+            tracing::info!("Batcher: reached tx per batch limit");
             return true;
         }
 
         if self.native_cycles > MAX_NATIVE_COMPUTATIONAL {
             BATCHER_METRICS.seal_reason[&"native_cycles"].inc();
-            tracing::debug!("Batcher: reached native cycles limit for the batch");
+            tracing::info!("Batcher: reached native cycles limit for the batch");
             return true;
         }
 
         if self.pubdata_bytes > self.batch_pubdata_limit_bytes {
             BATCHER_METRICS.seal_reason[&"pubdata"].inc();
-            tracing::debug!("Batcher: reached pubdata bytes limit for the batch");
+            tracing::info!("Batcher: reached pubdata bytes limit for the batch");
             return true;
         }
 
         if self.l2_to_l1_logs_count > MAX_NUMBER_OF_LOGS {
             BATCHER_METRICS.seal_reason[&"l2_l1_logs"].inc();
-            tracing::debug!("Batcher: reached max number of L2 to L1 logs");
+            tracing::info!("Batcher: reached max number of L2 to L1 logs");
             return true;
         }
 
         if self.interop_roots_count > self.interop_roots_per_batch_limit {
             BATCHER_METRICS.seal_reason[&"interop_roots"].inc();
-            tracing::debug!("Batcher: reached max number of interop roots per batch");
+            tracing::info!("Batcher: reached max number of interop roots per batch");
             return true;
         }
 
@@ -158,7 +158,7 @@ impl BatchInfoAccumulator {
         // exclude. It will then go in the first block of the next batch.
         if self.should_seal_for_gateway_migration {
             BATCHER_METRICS.seal_reason[&"chain_id_update_tx"].inc();
-            tracing::debug!(
+            tracing::info!(
                 "Batcher: sealing batch due to chain id update transaction, which should go in the first block of the next batch"
             );
             return true;
@@ -168,7 +168,7 @@ impl BatchInfoAccumulator {
         // to the `protocol_versions` one above, so we can remove this logic.
         if self.execution_versions.len() > 1 {
             BATCHER_METRICS.seal_reason[&"execution_version_change"].inc();
-            tracing::debug!("Batcher: ZKsync OS version changed within the batch");
+            tracing::info!("Batcher: ZKsync OS version changed within the batch");
             return true;
         }
 

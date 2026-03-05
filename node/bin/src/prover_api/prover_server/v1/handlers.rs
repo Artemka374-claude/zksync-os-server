@@ -64,7 +64,7 @@ pub(super) async fn submit_fri_proof(
     Json(payload): Json<FriProofPayload>,
 ) -> Result<Response, (StatusCode, String)> {
     let start = Instant::now();
-    tracing::debug!(
+    tracing::info!(
         "Received submit FRI proof request from prover with ID: {}",
         query.id
     );
@@ -190,7 +190,7 @@ pub(super) async fn submit_snark_proof(
     Json(payload): Json<SnarkProofPayload>,
 ) -> Result<Response, (StatusCode, String)> {
     let start = Instant::now();
-    tracing::debug!(
+    tracing::info!(
         "Received submit SNARK proof request from prover with ID: {}",
         query.id
     );

@@ -100,7 +100,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> PipelineComponent
             if next_block_number >= first_expected_block {
                 break;
             }
-            tracing::debug!(
+            tracing::info!(
                 block_number = next_block_number,
                 "skipping already executed block"
             );
@@ -189,7 +189,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> PipelineComponent
                 "Batch {}", if recreated { "recreated" } else { "created" }
             );
 
-            tracing::debug!(
+            tracing::info!(
                 batch_number = batch_envelope.batch_number(),
                 da_commitment = ?batch_envelope.batch.batch_info.operator_da_input,
                 "Batch da_input",
@@ -244,7 +244,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
                     }
                 }, if deadline.is_some() => {
                     BATCHER_METRICS.seal_reason[&"timeout"].inc();
-                    tracing::debug!(batch_number, "Timeout reached, sealing the batch.");
+                    tracing::info!(batch_number, "Timeout reached, sealing the batch.");
                     break;
                 }
 
@@ -266,7 +266,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
 
                             let block_number = replay_record.block_context.block_number;
 
-                            tracing::debug!(
+                            tracing::info!(
                                 batch_number,
                                 block_number,
                                 "Adding block to a pending batch."
@@ -295,7 +295,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
                                 if block_number >= self.startup_config.last_persisted_block {
                                     deadline = Some(Box::pin(tokio::time::sleep(self.batcher_config.batch_timeout)));
                                 } else {
-                                    tracing::debug!(
+                                    tracing::info!(
                                         block_number,
                                         last_persisted_block = self.startup_config.last_persisted_block,
                                         "received block with number lower than `last_persisted_block`. Not enabling the deadline seal criteria yet."
@@ -372,7 +372,7 @@ impl<ReadState: ReadStateHistory + Clone + Send + 'static> Batcher<ReadState> {
                 leaf_count,
             };
 
-            tracing::debug!(
+            tracing::info!(
                 batch_number,
                 block_number = replay_record.block_context.block_number,
                 "Adding block to recreated batch"
