@@ -32,16 +32,18 @@ use zksync_os_object_store::{ObjectStoreConfig, ObjectStoreMode};
 use zksync_os_server::config::{
     BatchVerificationConfig, Config, FakeFriProversConfig, FakeSnarkProversConfig, FeeConfig,
     GeneralConfig, NetworkConfig, ProverApiConfig, ProverInputGeneratorConfig, RpcConfig,
-    SequencerConfig, StatusServerConfig,
+    SequencerConfig, StatusServerConfig, ConsensusConfig,
 };
 use zksync_os_server::default_protocol_version::{NEXT_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use zksync_os_state_full_diffs::FullDiffsState;
+use zksync_os_status_server::StatusResponse;
 use zksync_os_types::NodeRole;
 
 pub mod assert_traits;
 pub mod config;
 pub mod contracts;
 pub mod dyn_wallet_provider;
+pub mod multi_node;
 mod network;
 mod prover_tester;
 pub mod provider;
@@ -92,6 +94,7 @@ pub struct Tester {
     node_record: NodeRecord,
     l2_rpc_address: String,
     batch_verification_url: String,
+    status_server_url: String,
 }
 
 impl Tester {
@@ -117,6 +120,36 @@ impl Tester {
         &self.l2_rpc_address
     }
 
+    pub async fn status(&self) -> anyhow::Result<StatusResponse> {
+        let response = reqwest::get(format!("{}/status", self.status_server_url))
+            .await?
+            .error_for_status()?;
+        Ok(response.json::<StatusResponse>().await?)
+    }
+
+    pub async fn wait_for_initial_deposit(&self) -> anyhow::Result<()> {
+        (|| async {
+            let balance = self
+                .l2_provider
+                .get_balance(self.l2_wallet.default_signer().address())
+                .await?;
+            if balance == U256::ZERO {
+                anyhow::bail!("L2 rich wallet balance is zero")
+            }
+            Ok(())
+        })
+        .retry(
+            ConstantBuilder::default()
+                .with_delay(Duration::from_secs(1))
+                .with_max_times(10),
+        )
+        .notify(|err: &anyhow::Error, dur: Duration| {
+            tracing::info!(%err, ?dur, "waiting for initial L2 deposit");
+        })
+        .await
+    }
+
+    // todo: we can make `MultiNodeTester` also support ENs.
     pub async fn launch_external_node(&self) -> anyhow::Result<Self> {
         // Due to type inference issue, we need to specify None type here and this whole function if a de-facto helper for this
         self.launch_external_node_inner(None::<fn(&mut Config)>)
@@ -151,6 +184,7 @@ impl Tester {
             Some(overrides_fun),
             Some(self.main_node_tempdir.clone()),
             PROTOCOL_VERSION,
+            true,
         )
         .await
     }
@@ -161,6 +195,7 @@ impl Tester {
         config_overrides: Option<impl FnOnce(&mut Config)>,
         main_node_tempdir: Option<Arc<tempfile::TempDir>>,
         protocol_version: &str,
+        require_prefunded_wallet: bool,
     ) -> anyhow::Result<Self> {
         // Initialize and **hold** locked ports for the duration of node initialization.
         let l2_locked_port = LockedPort::acquire_unused().await?;
@@ -236,16 +271,12 @@ impl Tester {
 
         let status_server_config = StatusServerConfig {
             enabled: true,
-            address: status_address,
+            address: status_address.clone(),
         };
 
         let default_config = load_chain_config(ChainLayout::Default { protocol_version });
 
         let network_secret_key = zksync_os_network::rng_secret_key();
-        let node_record = NodeRecord::from_secret_key(
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), network_locked_port.port),
-            &network_secret_key,
-        );
         let network_config = NetworkConfig {
             enabled: true,
             secret_key: Some(network_secret_key),
@@ -257,6 +288,7 @@ impl Tester {
         let mut config = Config {
             general_config,
             network_config,
+            consensus_config: ConsensusConfig::default(),
             genesis_config: default_config.genesis_config.clone(),
             rpc_config,
             mempool_config: Default::default(),
@@ -283,6 +315,24 @@ impl Tester {
         if let Some(f) = config_overrides {
             f(&mut config)
         }
+
+        let node_record = NodeRecord::from_secret_key(
+            SocketAddr::new(IpAddr::V4(config.network_config.address), config.network_config.port),
+            config
+                .network_config
+                .secret_key
+                .as_ref()
+                .context("network.secret_key must be set in tests")?,
+        );
+        tracing::info!(
+            node_id = %node_record.id,
+            rpc = %l2_rpc_address,
+            network = %format!("{}:{}", config.network_config.address, config.network_config.port),
+            status = %status_address,
+            bootstrap = config.consensus_config.bootstrap,
+            run_batcher_subsystem = config.general_config.run_batcher_subsystem,
+            "launching test node"
+        );
 
         let main_task = tokio::task::spawn(async move {
             zksync_os_server::run::<FullDiffsState>(stop_receiver, config).await;
@@ -356,30 +406,11 @@ impl Tester {
             tracing::info!(%err, ?dur, "retrying connection to L2 node");
         })
         .await?;
-
-        // Note: Balance check is disabled for v31.0 genesis which doesn't pre-fund L2 wallets.
-        // Tests using v31.0 should fund wallets themselves via L1 deposits if needed.
-        if protocol_version == PROTOCOL_VERSION {
-            // Wait for all L1 priority transaction to get executed and for our L2 account to become rich
-            (|| async {
-                let balance = l2_provider
-                    .get_balance(l2_wallet.default_signer().address())
-                    .await?;
-                if balance == U256::ZERO {
-                    anyhow::bail!("L2 rich wallet balance is zero")
-                }
-                Ok(())
-            })
-            .retry(
-                ConstantBuilder::default()
-                    .with_delay(Duration::from_secs(1))
-                    .with_max_times(10),
-            )
-            .notify(|err: &anyhow::Error, dur: Duration| {
-                tracing::info!(%err, ?dur, "waiting for L2 account to become rich");
-            })
-            .await?;
-        }
+        tracing::info!(
+            node_id = %node_record.id,
+            rpc = %l2_rpc_address,
+            "L2 RPC is available for test node"
+        );
 
         let l2_zk_provider = ProviderBuilder::new_with_network::<Zksync>()
             .wallet(l2_wallet.clone())
@@ -392,7 +423,7 @@ impl Tester {
             EthDynProvider::new(l2_provider.clone()),
             DynProvider::new(l2_zk_provider.clone()),
         );
-        Ok(Tester {
+        let tester = Tester {
             l1,
             l2_provider: EthDynProvider::new(l2_provider.clone()),
             l2_zk_provider: DynProvider::new(l2_zk_provider.clone()),
@@ -402,10 +433,19 @@ impl Tester {
             main_task,
             l2_rpc_address: l2_rpc_address.replace("0.0.0.0:", "http://localhost:"),
             batch_verification_url,
+            status_server_url: status_address.replace("0.0.0.0:", "http://localhost:"),
             node_record,
             tempdir: tempdir.clone(),
             main_node_tempdir: main_node_tempdir.unwrap_or(tempdir),
-        })
+        };
+
+        // Note: Balance check is disabled for v31.0 genesis which doesn't pre-fund L2 wallets.
+        // Tests using v31.0 should fund wallets themselves via L1 deposits if needed.
+        if require_prefunded_wallet && protocol_version == PROTOCOL_VERSION {
+            tester.wait_for_initial_deposit().await?;
+        }
+
+        Ok(tester)
     }
 }
 
@@ -473,6 +513,7 @@ impl TesterBuilder {
             Some(overrides_fun),
             None,
             PROTOCOL_VERSION,
+            true,
         )
         .await
     }
@@ -573,6 +614,7 @@ impl MultiChainTesterBuilder {
                 Some(chain_override),
                 None,
                 NEXT_PROTOCOL_VERSION,
+                true,
             )
             .await?;
 

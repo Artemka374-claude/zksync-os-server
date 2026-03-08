@@ -20,6 +20,8 @@ zksync_os_rpc_api.workspace = true
 zksync_os_state_full_diffs.workspace = true
 zksync_os_multivm.workspace = true
 zksync_os_network.workspace = true
+zksync_os_status_server.workspace = true
+zksync_os_raft.workspace = true
 
 alloy = { workspace = true, default-features = false, features = ["provider-anvil-node", "rand", "json-rpc", "pubsub", "provider-ws"] }
 anyhow.workspace = true
@@ -36,6 +38,7 @@ serde.workspace = true
 regex = "1.11.1"
 smart-config.workspace = true
 serde_yaml.workspace = true
+reqwest.workspace = true
 
 # Needed for upgrade functionality tests
 zk_os_api.workspace = true

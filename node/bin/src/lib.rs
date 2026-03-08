@@ -17,7 +17,7 @@ pub mod tree_manager;
 
 use crate::batch_sink::{BatchSink, NoOpSink, clear_failing_block_config_task};
 use crate::batcher::{Batcher, BatcherStartupConfig, util::load_genesis_stored_batch_info};
-use crate::command_source::{ExternalNodeCommandSource, MainNodeCommandSource};
+use crate::command_source::{ConsensusNodeCommandSource, ExternalNodeCommandSource};
 use crate::config::{
     Config, ProverApiConfig, base_token_price_updater_config, gas_adjuster_config,
 };
@@ -82,13 +82,14 @@ use zksync_os_network::wire::replays::RecordOverride;
 use zksync_os_object_store::ObjectStoreFactory;
 use zksync_os_observability::GENERAL_METRICS;
 use zksync_os_pipeline::Pipeline;
+use zksync_os_raft::{BlockCanonizationEngine, ConsensusRuntimeParts, LeadershipSignal};
 use zksync_os_reth_compat::provider::ZkProviderFactory;
 use zksync_os_revm_consistency_checker::node::RevmConsistencyChecker;
 use zksync_os_rpc::{RpcStorage, run_jsonrpsee_server};
 use zksync_os_rpc_api::eth::EthApiClient;
 use zksync_os_sequencer::execution::block_context_provider::BlockContextProvider;
 use zksync_os_sequencer::execution::{
-    BlockApplier, BlockCanonizer, BlockExecutor, FeeParams, FeeProvider, NoopCanonization,
+    BlockApplier, BlockCanonizer, BlockExecutor, FeeParams, FeeProvider,
 };
 use zksync_os_status_server::run_status_server;
 use zksync_os_storage::db::{BlockReplayStorage, ExecutedBatchStorage};
@@ -104,6 +105,7 @@ use zksync_os_types::{
 };
 
 const BLOCK_REPLAY_WAL_DB_NAME: &str = "block_replay_wal";
+const RAFT_DB_NAME: &str = "raft";
 const STATE_TREE_DB_NAME: &str = "tree";
 const PRIORITY_TREE_DB_NAME: &str = "priority_txs_tree";
 const REPOSITORY_DB_NAME: &str = "repository";
@@ -377,6 +379,30 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
 
     // Channel between NetworkService and Sequencer
     let (replay_sender, replays_for_sequencer) = tokio::sync::mpsc::channel(128);
+
+    let ConsensusRuntimeParts {
+        canonization_engine,
+        leadership,
+        network_protocol,
+        bootstrapper,
+        status,
+    } = if config.consensus_config.enabled {
+        ConsensusRuntimeParts::new(
+            config
+                .consensus_config
+                .clone()
+                .into_raft_consensus_config(
+                    &config.network_config,
+                    config.general_config.rocks_db_path.join(RAFT_DB_NAME),
+                )
+                .expect("failed to build raft consensus config"),
+        )
+        .await
+        .expect("failed to initialize consensus engine")
+    } else {
+        tracing::info!("openraft consensus is disabled - assuming perpetual leader role");
+        ConsensusRuntimeParts::loopback()
+    };
     if config.network_config.enabled {
         tracing::info!("initializing p2p networking");
 
@@ -397,10 +423,16 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
                 .collect(),
             zk_provider_factory,
             replay_sender,
+            network_protocol.into_protocol_handler(),
         )
         .await
         .expect("failed to create network service");
         network_service.run(&mut tasks, stop_receiver.clone());
+
+        bootstrapper
+            .bootstrap_if_needed()
+            .await
+            .expect("failed to run raft bootstrap process");
     } else if node_role.is_main() {
         tracing::info!(
             "p2p networking is disabled; to enable set `network.enabled=true` and populate `network.secret_key`"
@@ -752,6 +784,8 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             tx_acceptance_state_sender,
             sidecar_sender,
             committed_batch_provider.clone(),
+            canonization_engine,
+            leadership,
         )
         .await;
     } else {
@@ -781,6 +815,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
             run_status_server(
                 config.status_server_config.address.clone(),
                 stop_receiver.clone(),
+                status.into_raft_status_rx(),
             )
             .map(report_exit("Status server")),
         );
@@ -838,7 +873,71 @@ async fn run_main_node_pipeline(
     tx_acceptance_state_sender: watch::Sender<TransactionAcceptanceState>,
     sidecar_sender: tokio::sync::mpsc::Sender<BlobTransactionSidecar>,
     committed_batch_provider: CommittedBatchProvider,
+    canonization_engine: BlockCanonizationEngine,
+    leadership: LeadershipSignal,
 ) {
+    let priority_tree_db_path = config
+        .general_config
+        .rocks_db_path
+        .join(PRIORITY_TREE_DB_NAME);
+    let internal_config_manager = init_and_report_internal_config_manager(
+        config
+            .general_config
+            .rocks_db_path
+            .join(INTERNAL_CONFIG_FILE_NAME),
+    );
+
+    let (replays_to_execute_sender, replays_to_execute) = tokio::sync::mpsc::channel(8);
+
+    let pipeline = Pipeline::new()
+        .pipe(ConsensusNodeCommandSource {
+            block_replay_storage: block_replay_storage.clone(),
+            starting_block,
+            rebuild_options: config
+                .sequencer_config
+                .block_rebuild
+                .clone()
+                .map(Into::into),
+            replays_to_execute,
+            leadership,
+        })
+        .pipe(BlockExecutor {
+            block_context_provider,
+            state: state.clone(),
+            config: config.into(),
+            tx_acceptance_state_sender,
+        })
+        .pipe(BlockCanonizer {
+            consensus: canonization_engine,
+            canonized_blocks_for_execution: replays_to_execute_sender,
+        })
+        .pipe(BlockApplier {
+            state: state.clone(),
+            replay: block_replay_storage.clone(),
+            repositories: repositories.clone(),
+            config: config.into(),
+        })
+        .pipe_opt(
+            config
+                .sequencer_config
+                .revm_consistency_checker_enabled
+                .then(|| {
+                    RevmConsistencyChecker::new(
+                        state.clone(),
+                        internal_config_manager.clone(),
+                        config
+                            .sequencer_config
+                            .revm_consistency_checker_revert_on_divergence,
+                    )
+                }),
+        )
+        .pipe(TreeManager { tree: tree.clone() });
+
+    if !config.general_config.run_batcher_subsystem {
+        pipeline.pipe(NoOpSink::new()).spawn(tasks);
+        return;
+    }
+
     tracing::info!("Initializing ProofStorage");
     // todo: this is used purely for prover API
     //       decide what to do with it - might still be useful to debug failed proofs
@@ -883,61 +982,7 @@ async fn run_main_node_pipeline(
         run_fake_snark_provers(&config.prover_api_config, tasks, snark_job_manager);
     }
 
-    let priority_tree_db_path = config
-        .general_config
-        .rocks_db_path
-        .join(PRIORITY_TREE_DB_NAME);
-    let internal_config_manager = init_and_report_internal_config_manager(
-        config
-            .general_config
-            .rocks_db_path
-            .join(INTERNAL_CONFIG_FILE_NAME),
-    );
-
-    let (replays_to_execute_sender, replays_to_execute) = tokio::sync::mpsc::channel(8);
-
-    Pipeline::new()
-        .pipe(MainNodeCommandSource {
-            block_replay_storage: block_replay_storage.clone(),
-            starting_block,
-            rebuild_options: config
-                .sequencer_config
-                .block_rebuild
-                .clone()
-                .map(Into::into),
-            replays_to_execute,
-        })
-        .pipe(BlockExecutor {
-            block_context_provider,
-            state: state.clone(),
-            config: config.into(),
-            tx_acceptance_state_sender,
-        })
-        .pipe(BlockCanonizer {
-            consensus: NoopCanonization::new(),
-            canonized_blocks_for_execution: replays_to_execute_sender,
-        })
-        .pipe(BlockApplier {
-            state: state.clone(),
-            replay: block_replay_storage.clone(),
-            repositories: repositories.clone(),
-            config: config.into(),
-        })
-        .pipe_opt(
-            config
-                .sequencer_config
-                .revm_consistency_checker_enabled
-                .then(|| {
-                    RevmConsistencyChecker::new(
-                        state.clone(),
-                        internal_config_manager.clone(),
-                        config
-                            .sequencer_config
-                            .revm_consistency_checker_revert_on_divergence,
-                    )
-                }),
-        )
-        .pipe(TreeManager { tree: tree.clone() })
+    let pipeline = pipeline
         .pipe(ProverInputGenerator {
             enable_logging: config.prover_input_generator_config.logging_enabled,
             maximum_in_flight_blocks: config
@@ -1010,8 +1055,10 @@ async fn run_main_node_pipeline(
             to_address: node_state_on_startup.l1_state.validator_timelock_sl,
             gateway: config.general_config.gateway_rpc_url.is_some(),
         })
-        .pipe(BatchSink::new(internal_config_manager))
-        .spawn(tasks);
+        .pipe(BatchSink::new(internal_config_manager));
+
+    tracing::info!("Launching pipeline");
+    pipeline.spawn(tasks);
 }
 
 /// Only for EN - we still populate channels destined for the batcher subsystem -

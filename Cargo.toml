@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "lib/contract_interface",
+    "lib/consensus_types",
     "lib/crypto",
     "lib/genesis",
     "lib/l1_sender",
@@ -36,6 +37,7 @@ members = [
     "lib/external_price_api",
     "lib/base_token_adjuster",
     "lib/reth_compat",
+    "lib/raft",
 ]
 resolver = "3"
 default-members = ["node/bin"]
@@ -186,6 +188,7 @@ num_cpus = "1.17.0"
 rocksdb = "0.24.0"
 thread_local = "1.1.9"
 pin-project = "1.1.10"
+openraft = { version = "0.9.21", features = ["serde", "generic-snapshot-data", "storage-v2"] }
 aws-config = { version = "1.8.6", default-features = false, features = [
     "behavior-version-latest",
 ] }
@@ -243,6 +246,7 @@ zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = 
 
 # "Local" dependencies
 zksync_os_contract_interface = { version = "=0.16.0", path = "lib/contract_interface" }
+zksync_os_consensus_types = { version = "=0.16.0", path = "lib/consensus_types" }
 zksync_os_crypto = { version = "=0.16.0", path = "lib/crypto" }
 zksync_os_l1_sender = { version = "=0.16.0", path = "lib/l1_sender" }
 zksync_os_l1_watcher = { version = "=0.16.0", path = "lib/l1_watcher" }
@@ -272,6 +276,7 @@ zksync_os_batch_verification = { version = "=0.16.0", path = "lib/batch_verifica
 zksync_os_batch_types = { version = "=0.16.0", path = "lib/batch_types" }
 zksync_os_internal_config = { version = "=0.16.0", path = "lib/internal_config" }
 zksync_os_network = { version = "=0.16.0", path = "lib/network" }
+zksync_os_raft = { version = "=0.16.0", path = "lib/raft" }
 zksync_os_metadata = { version = "=0.16.0", path = "lib/metadata" }
 zksync_os_external_price_api = { version = "=0.16.0", path = "lib/external_price_api" }
 zksync_os_base_token_adjuster = { version = "=0.16.0", path = "lib/base_token_adjuster" }
