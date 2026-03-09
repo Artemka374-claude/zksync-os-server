@@ -83,7 +83,8 @@ use zksync_os_object_store::ObjectStoreFactory;
 use zksync_os_observability::GENERAL_METRICS;
 use zksync_os_pipeline::Pipeline;
 use zksync_os_raft::{
-    BlockCanonizationEngine, LeadershipSignal, init_consensus, loopback_consensus,
+    BlockCanonizationEngine, ConsensusRuntimeParts, LeadershipSignal, init_consensus,
+    loopback_consensus,
 };
 use zksync_os_reth_compat::provider::ZkProviderFactory;
 use zksync_os_revm_consistency_checker::node::RevmConsistencyChecker;

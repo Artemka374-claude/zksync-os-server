@@ -18,6 +18,7 @@ use tokio::time::timeout;
 use zksync_os_consensus_types::{RaftNode, RaftTypeConfig};
 use zksync_os_network::raft::protocol::RaftProtocolHandler;
 use zksync_os_network::raft::protocol::RaftRouter;
+use zksync_os_sequencer::execution::NoopCanonization;
 pub async fn init_consensus(config: RaftConsensusConfig) -> anyhow::Result<ConsensusRuntimeParts> {
     anyhow::ensure!(
         config.peer_ids.contains(&config.node_id),
