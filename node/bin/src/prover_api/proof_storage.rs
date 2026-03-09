@@ -70,16 +70,13 @@ impl ProofStorage {
         let latency = PROOF_STORAGE_METRICS.latency[&ProofStorageMethod::GetBatchWithProof].start();
 
         let key = format!("batch_{batch_num}.json");
-        let result = match self
+        let result = self
             .batches_with_proof
             .lock()
             .await
             .load::<StoredBatch>(&key)
             .await
-        {
-            Ok(o) => Ok(o.map(|o| o.batch_envelope())),
-            Err(err) => Err(err),
-        };
+            .map(|o| o.map(|o| o.batch_envelope()));
 
         latency.observe();
         result
@@ -213,7 +210,7 @@ impl BoundedFileStorage {
 
     async fn load<T: DeserializeOwned>(&self, key: &str) -> anyhow::Result<Option<T>> {
         let path = self.base_dir.join(key);
-        if !path.exists() {
+        if !fs::try_exists(&path).await? {
             return Ok(None);
         }
 
@@ -293,9 +290,9 @@ mod tests {
     // Make sure files are being removed as expected
     #[tokio::test]
     async fn test_bounded_storage_capacity() -> anyhow::Result<()> {
+        const LIMIT: u64 = 20000;
         let dir = TempDir::new()?;
         let path = dir.path().to_owned();
-        const LIMIT: u64 = 20000;
         let mut storage = BoundedFileStorage::new(path, LIMIT).await?;
 
         // Many small files
@@ -340,7 +337,7 @@ mod tests {
         // This should remove all the old entries
         storage.store("key2", &big_str).await?;
         assert!(storage.load::<String>("key").await?.is_none());
-        // Can't store huge files -
+        // Files larger than limit won't be stored
         let very_big = "a".repeat((2 * LIMIT) as usize);
         storage.store("key", &very_big).await?;
         assert!(storage.load::<String>("key").await?.is_none());
