@@ -3,6 +3,6 @@ pub mod model;
 
 pub use init::loopback_consensus;
 pub use model::{
-    BlockCanonizationEngine, ConsensusBootstrapper, ConsensusNetworkProtocol,
+    BlockCanonizationEngine, ConsensusBootstrapper, ConsensusNetworkProtocol, ConsensusRole,
     ConsensusRuntimeParts, ConsensusStatusSource, LeadershipSignal,
 };

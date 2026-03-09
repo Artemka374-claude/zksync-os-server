@@ -384,6 +384,7 @@ pub async fn run<State: ReadStateHistory + WriteState + StateInitializer + Clone
     let ConsensusRuntimeParts {
         canonization_engine,
         leadership,
+        ..
     } = loopback_consensus();
     if config.network_config.enabled {
         tracing::info!("initializing p2p networking");
@@ -907,11 +908,6 @@ async fn run_main_node_pipeline(
                 }),
         )
         .pipe(TreeManager { tree: tree.clone() });
-
-    if !config.general_config.run_batcher_subsystem {
-        pipeline.pipe(NoOpSink::new()).spawn(tasks);
-        return;
-    }
 
     tracing::info!("Initializing ProofStorage");
     // todo: this is used purely for prover API
