@@ -13,7 +13,9 @@ use ruint::aliases::B160;
 use std::sync::Arc;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zksync_os_genesis::{GenesisInput, GenesisInputSource};
+use zksync_os_merkle_tree_api::flat::StorageSlotProof;
 use zksync_os_mini_merkle_tree::MiniMerkleTree;
+use zksync_os_rpc_api::types::AddressScopedKey;
 use zksync_os_rpc_api::{
     types::{BatchStorageProof, BlockMetadata, L2ToL1LogProof, StateCommitmentPreimage},
     zks::ZksApiServer,
@@ -281,7 +283,7 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
             .collect();
         // We query tree version by the *block* number because the tree is updated on each block,
         // rather than once per batch.
-        let Some((mut flat_proofs, tree_output)) = self
+        let Some((flat_proofs, tree_output)) = self
             .storage
             .tree()
             .prove_flat(last_block_number, &flat_keys)?
@@ -290,9 +292,14 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
         };
 
         // Swap flat keys in the proofs back to address-scoped keys
-        for (proof, &key) in flat_proofs.iter_mut().zip(keys) {
-            proof.key = key;
-        }
+        let storage_proofs: Vec<_> = flat_proofs
+            .into_iter()
+            .zip(keys)
+            .map(|(proof, &key)| StorageSlotProof {
+                key: AddressScopedKey(key),
+                proof: proof.proof,
+            })
+            .collect();
 
         let state_commitment_preimage = StateCommitmentPreimage {
             next_free_slot: U64::from(tree_output.leaf_count),
@@ -314,7 +321,7 @@ impl<RpcStorage: ReadRpcStorage> ZksNamespace<RpcStorage> {
         Ok(Some(BatchStorageProof {
             address,
             state_commitment_preimage,
-            storage_proofs: flat_proofs,
+            storage_proofs,
         }))
     }
 }

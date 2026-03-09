@@ -152,6 +152,25 @@ impl StateCommitmentPreimage {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AddressScopedKey(pub B256);
+
+impl AddressScopedKey {
+    // There's a similar function in `zk_ee`, but it relies on multiple unstable features.
+    fn derive_flat_key(address: Address, key: B256) -> B256 {
+        let mut hasher = Blake2s256::new();
+        hasher.update([0_u8; 12]); // address padding
+        hasher.update(address.0);
+        hasher.update(key.0);
+        B256::from_slice(&hasher.finalize())
+    }
+
+    fn to_flat_key(self, address: Address) -> B256 {
+        Self::derive_flat_key(address, self.0)
+    }
+}
+
 /// Storage proof returned from the `zks_getProof` RPC method. Rooted in the batch hash recorded on L1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,20 +181,11 @@ pub struct BatchStorageProof {
     /// `storage_proofs`).
     pub state_commitment_preimage: StateCommitmentPreimage,
     /// Flat storage proofs for each queried key.
-    pub storage_proofs: Vec<flat::StorageSlotProof>,
+    pub storage_proofs: Vec<flat::StorageSlotProof<AddressScopedKey>>,
 }
 
 impl BatchStorageProof {
     const TREE_DEPTH: u8 = 64;
-
-    // There's a similar function in `zk_ee`, but it relies on multiple unstable features.
-    fn derive_flat_key(address: Address, key: B256) -> B256 {
-        let mut hasher = Blake2s256::new();
-        hasher.update([0_u8; 12]); // address padding
-        hasher.update(address.0);
-        hasher.update(key.0);
-        B256::from_slice(&hasher.finalize())
-    }
 
     /// Verifies this proof.
     ///
@@ -194,7 +204,7 @@ impl BatchStorageProof {
             "Mismatched address: queried {queried_address:?}, got {:?}",
             self.address
         );
-        let actual_keys = self.storage_proofs.iter().map(|proof| proof.key);
+        let actual_keys = self.storage_proofs.iter().map(|proof| proof.key.0);
         anyhow::ensure!(
             actual_keys.clone().eq(queried_keys.iter().copied()),
             "Mismatched proven slots: queried {queried_keys:?}, got {:?}",
@@ -204,7 +214,7 @@ impl BatchStorageProof {
         let mut cached_tree_root_hash = None;
         let mut storage_values = Vec::with_capacity(self.storage_proofs.len());
         for proof in &self.storage_proofs {
-            let flat_key = Self::derive_flat_key(self.address, proof.key);
+            let flat_key = proof.key.to_flat_key(self.address);
             let tree_root_hash = proof
                 .proof
                 .verify(Self::TREE_DEPTH, flat_key)

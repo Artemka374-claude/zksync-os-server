@@ -106,9 +106,10 @@ impl InnerStorageSlotProof {
 /// Storage proof for a single Merkle tree slot + the slot key (to allow for standalone verification).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StorageSlotProof {
-    /// Key of the slot in the tree (i.e., the *flat* key in terms of ZKsync OS).
-    pub key: B256,
+pub struct StorageSlotProof<K = B256> {
+    /// Key of the slot in the tree. For proofs produced by the `merkle_tree` crate, this is the *flat* key
+    /// in terms of ZKsync OS, which allows for standalone proof verification.
+    pub key: K,
     /// Proof contents.
     pub proof: InnerStorageSlotProof,
 }
@@ -118,7 +119,9 @@ impl StorageSlotProof {
     pub fn verify(&self, tree_depth: u8) -> anyhow::Result<B256> {
         self.proof.verify(tree_depth, self.key)
     }
+}
 
+impl<K> StorageSlotProof<K> {
     /// Returns the storage value for the slot.
     pub fn value(&self) -> Option<B256> {
         match &self.proof {
