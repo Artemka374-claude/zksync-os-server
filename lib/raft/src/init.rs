@@ -1,6 +1,6 @@
 use crate::config::RaftConsensusConfig;
 use crate::model::{
-    BlockCanonizationEngine, ConsensusBootstrapper, ConsensusNetworkProtocol,
+    BlockCanonizationEngine, ConsensusBootstrapper, ConsensusNetworkProtocol, ConsensusRole,
     ConsensusRuntimeParts, ConsensusStatusSource, LeadershipSignal, OpenRaftCanonizationEngine,
 };
 use crate::network::{RaftNetworkFactory, RaftRpcHandler};
@@ -67,7 +67,7 @@ pub async fn init_consensus(config: RaftConsensusConfig) -> anyhow::Result<Conse
     )
     .await?;
     tracing::info!(%node_id, "openraft runtime created");
-    let (leader_tx, leader_rx) = watch::channel(false);
+    let (leader_tx, leader_rx) = watch::channel(ConsensusRole::Replica);
     let (status_tx, status_rx) = watch::channel(RaftConsensusStatus {
         node_id: node_id.to_string(),
         state: "Learner".to_owned(),
@@ -114,7 +114,7 @@ const CANONIZED_BUFFER_SIZE: usize = 8;
 fn spawn_metrics_task(
     raft: Raft<RaftTypeConfig>,
     node_id_str: String,
-    leader_tx: watch::Sender<bool>,
+    leader_tx: watch::Sender<ConsensusRole>,
     status_tx: watch::Sender<RaftConsensusStatus>,
 ) {
     let raft_for_leader_check = raft.clone();
@@ -181,15 +181,19 @@ fn spawn_metrics_task(
             }
             last_claims_leader = claims_leader;
 
-            let is_leader = claims_leader && leader_confirmed;
-            if last_is_leader != Some(is_leader) {
-                tracing::info!(is_leader, "OpenRaft leadership status changed");
-                last_is_leader = Some(is_leader);
+            let role = if claims_leader && leader_confirmed {
+                ConsensusRole::Leader
+            } else {
+                ConsensusRole::Replica
+            };
+            if last_is_leader != Some(role == ConsensusRole::Leader) {
+                tracing::info!(role = ?role, "OpenRaft leadership status changed");
+                last_is_leader = Some(role == ConsensusRole::Leader);
             }
             let status = RaftConsensusStatus {
                 node_id: node_id_str.clone(),
                 state: format!("{:?}", metrics.state),
-                is_leader,
+                is_leader: role == ConsensusRole::Leader,
                 current_leader: metrics.current_leader.map(|id| id.to_string()),
                 current_term: metrics.current_term,
                 last_applied_index: metrics.last_applied.map(|id| id.index),
@@ -197,7 +201,7 @@ fn spawn_metrics_task(
             if status_tx.send(status).is_err() {
                 break;
             }
-            if leader_tx.send(is_leader).is_err() {
+            if leader_tx.send(role).is_err() {
                 break;
             }
         }
