@@ -166,6 +166,8 @@ pub fn write_outputs(
     fs::write(output_dir.join("report.md"), report_md)
         .with_context(|| format!("failed writing {}", output_dir.join("report.md").display()))?;
 
+    write_bencher_json(output_dir, &summary, metadata).context("write bencher.json")?;
+
     if mode.writes_json() {
         fs::write(output_dir.join("metrics.json"), render_json(samples)).with_context(|| {
             format!(
@@ -182,6 +184,40 @@ pub fn write_outputs(
             )
         })?;
     }
+    Ok(())
+}
+
+fn write_bencher_json(
+    output_dir: &Path,
+    summary: &BenchmarkSummary,
+    metadata: &RunMetadata,
+) -> anyhow::Result<()> {
+    // Bencher Metric Format (BMF): flat map of benchmark-name -> measure-type -> {value}
+    // Docs: https://bencher.dev/docs/reference/bencher-metric-format/
+    let bmf = json!({
+        "sequencer/tps10_median": {
+            "throughput": { "value": summary.median_tps10 }
+        },
+        "sequencer/tps10_p95": {
+            "throughput": { "value": summary.p95_tps10 }
+        },
+        "sequencer/include_latency_p50_s": {
+            "latency": { "value": summary.median_include_p50_10s_s }
+        },
+        "sequencer/receipt_timeouts": {
+            "latency": { "value": metadata.receipt_timeouts as f64 }
+        },
+        "sequencer/receipt_errors": {
+            "latency": { "value": metadata.receipt_errors as f64 }
+        }
+    });
+
+    let path = output_dir.join("bencher.json");
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&bmf).context("serialize bencher BMF")?,
+    )
+    .with_context(|| format!("failed writing {}", path.display()))?;
     Ok(())
 }
 
@@ -305,6 +341,41 @@ mod tests {
         assert_eq!(summary.median_include_p50_10s_s, 0.3);
         assert_eq!(summary.max_in_flight, 5);
         assert_eq!(summary.final_included, 50);
+    }
+
+    #[test]
+    fn writes_bencher_bmf_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let summary = BenchmarkSummary {
+            sample_count: 1,
+            duration: Duration::from_secs(1),
+            median_tps10: 42.5,
+            p95_tps10: 55.0,
+            median_include_p50_10s_s: 0.123,
+            max_in_flight: 10,
+            final_included: 100,
+        };
+        let metadata = RunMetadata {
+            chain_id: 6565,
+            wallets: 10,
+            max_in_flight: 10,
+            duration_s: 60,
+            destination_mode: "random".to_owned(),
+            rpc_url: "http://localhost:3050".to_owned(),
+            receipt_timeouts: 3,
+            receipt_errors: 1,
+        };
+        write_bencher_json(dir.path(), &summary, &metadata).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("bencher.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["sequencer/tps10_median"]["throughput"]["value"], 42.5);
+        assert_eq!(parsed["sequencer/tps10_p95"]["throughput"]["value"], 55.0);
+        assert_eq!(
+            parsed["sequencer/include_latency_p50_s"]["latency"]["value"],
+            0.123
+        );
+        assert_eq!(parsed["sequencer/receipt_timeouts"]["latency"]["value"], 3.0);
+        assert_eq!(parsed["sequencer/receipt_errors"]["latency"]["value"], 1.0);
     }
 
     #[test]
