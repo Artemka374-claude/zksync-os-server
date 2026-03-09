@@ -97,7 +97,7 @@ jobs:
       - name: Track performance with bencher.dev
         env:
           BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
-          BENCHER_PROJECT: zksync-os-server
+          BENCHER_PROJECT: antonbaliasnikov-s-project
           BENCHER_ADAPTER: json
           BENCHER_TESTBED: github-actions
         run: |
