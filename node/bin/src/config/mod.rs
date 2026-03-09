@@ -23,6 +23,7 @@ use zksync_os_network::{NodeRecord, SecretKey};
 use zksync_os_object_store::ObjectStoreConfig;
 use zksync_os_observability::LogFormat;
 use zksync_os_observability::opentelemetry::OpenTelemetryLevel;
+use zksync_os_operator_signer::OperatorSignerConfig;
 use zksync_os_types::{NodeRole, PubdataMode};
 
 mod cli;
@@ -439,6 +440,10 @@ pub struct RpcConfig {
 
 /// L1 sender configuration. The signing key fields are only required on the Main Node;
 /// External Nodes do not send L1 transactions and may omit them.
+///
+/// Each operator can be configured with either a local signing key (`operator_*_sk`) or a
+/// GCP KMS resource name (`operator_*_kms_resource`). If a KMS resource is set, it takes
+/// priority over the local key.
 #[derive(Clone, Debug, DescribeConfig, DeserializeConfig)]
 pub struct L1SenderConfig {
     /// Signing key to commit batches to L1
@@ -447,17 +452,30 @@ pub struct L1SenderConfig {
     #[config(alias = "operator_commit_pk", with = SigningKeyDeserializer)]
     pub operator_commit_sk: Option<SigningKey>,
 
+    /// GCP KMS resource name for the commit operator key.
+    /// If set, takes priority over `operator_commit_sk`.
+    /// Format: `projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}/cryptoKeyVersions/{version}`
+    pub operator_commit_kms_resource: Option<String>,
+
     /// Signing key to use to submit proofs to L1
     /// Can be arbitrary funded address - proof submission is permissionless.
     /// Not required for External Nodes, which do not send L1 transactions.
     #[config(alias = "operator_prove_pk", with = SigningKeyDeserializer)]
     pub operator_prove_sk: Option<SigningKey>,
 
+    /// GCP KMS resource name for the prove operator key.
+    /// If set, takes priority over `operator_prove_sk`.
+    pub operator_prove_kms_resource: Option<String>,
+
     /// Signing key to use to execute batches on L1
     /// Can be arbitrary funded address - execute submission is permissionless.
     /// Not required for External Nodes, which do not send L1 transactions.
     #[config(alias = "operator_execute_pk", with = SigningKeyDeserializer)]
     pub operator_execute_sk: Option<SigningKey>,
+
+    /// GCP KMS resource name for the execute operator key.
+    /// If set, takes priority over `operator_execute_sk`.
+    pub operator_execute_kms_resource: Option<String>,
 
     /// Max fee per gas we are willing to spend.
     #[config(default_t = 200 * EtherUnit::Gwei)]
@@ -829,6 +847,10 @@ pub struct BaseTokenPriceUpdaterConfig {
     /// Must be consistent with the key set on the chain admin contract.
     /// It's not used for chains with ETH as base token and it's expected to be set for all other chains.
     pub token_multiplier_setter_sk: Option<SigningKey>,
+
+    /// GCP KMS resource name for the token multiplier setter key.
+    /// If set, takes priority over `token_multiplier_setter_sk`.
+    pub token_multiplier_setter_kms_resource: Option<String>,
     /// Predefined fallback prices for tokens in case external API fetching fails on startup.
     #[config(default, with = Serde![*])]
     pub fallback_prices: HashMap<Address, f64>,
@@ -959,10 +981,10 @@ impl From<&Config> for zksync_os_sequencer::config::SequencerConfig {
 impl L1SenderConfig {
     fn into_lib_l1_sender_config<Input>(
         self,
-        operator_sk: SigningKey,
+        operator_signer: OperatorSignerConfig,
     ) -> zksync_os_l1_sender::config::L1SenderConfig<Input> {
         zksync_os_l1_sender::config::L1SenderConfig {
-            operator_sk,
+            operator_signer,
             max_fee_per_gas_wei: self.max_fee_per_gas.0,
             max_priority_fee_per_gas_wei: self.max_priority_fee_per_gas.0,
             max_fee_per_blob_gas_wei: self.max_fee_per_blob_gas.0,
@@ -973,32 +995,39 @@ impl L1SenderConfig {
         }
     }
 }
+
 impl From<L1SenderConfig> for zksync_os_l1_sender::config::L1SenderConfig<CommitCommand> {
     fn from(c: L1SenderConfig) -> Self {
-        let sk = c
-            .operator_commit_sk
-            .clone()
-            .expect("operator_commit_sk must be set on the Main Node");
-        c.into_lib_l1_sender_config(sk)
+        let signer = OperatorSignerConfig::resolve(
+            &c.operator_commit_sk,
+            &c.operator_commit_kms_resource,
+        )
+        .expect("either operator_commit_sk or operator_commit_kms_resource must be set on the Main Node");
+        c.into_lib_l1_sender_config(signer)
     }
 }
 
 impl From<L1SenderConfig> for zksync_os_l1_sender::config::L1SenderConfig<ProofCommand> {
     fn from(c: L1SenderConfig) -> Self {
-        let sk = c
-            .operator_prove_sk
-            .clone()
-            .expect("operator_prove_sk must be set on the Main Node");
-        c.into_lib_l1_sender_config(sk)
+        let signer = OperatorSignerConfig::resolve(
+            &c.operator_prove_sk,
+            &c.operator_prove_kms_resource,
+        )
+        .expect(
+            "either operator_prove_sk or operator_prove_kms_resource must be set on the Main Node",
+        );
+        c.into_lib_l1_sender_config(signer)
     }
 }
+
 impl From<L1SenderConfig> for zksync_os_l1_sender::config::L1SenderConfig<ExecuteCommand> {
     fn from(c: L1SenderConfig) -> Self {
-        let sk = c
-            .operator_execute_sk
-            .clone()
-            .expect("operator_execute_sk must be set on the Main Node");
-        c.into_lib_l1_sender_config(sk)
+        let signer = OperatorSignerConfig::resolve(
+            &c.operator_execute_sk,
+            &c.operator_execute_kms_resource,
+        )
+        .expect("either operator_execute_sk or operator_execute_kms_resource must be set on the Main Node");
+        c.into_lib_l1_sender_config(signer)
     }
 }
 
@@ -1075,6 +1104,11 @@ pub fn base_token_price_updater_config(
     c: &BaseTokenPriceUpdaterConfig,
     l1_sender_config: &L1SenderConfig,
 ) -> zksync_os_base_token_adjuster::BaseTokenPriceUpdaterConfig {
+    let token_multiplier_setter_signer = OperatorSignerConfig::resolve(
+        &c.token_multiplier_setter_sk,
+        &c.token_multiplier_setter_kms_resource,
+    );
+
     zksync_os_base_token_adjuster::BaseTokenPriceUpdaterConfig {
         price_polling_interval: c.price_polling_interval,
         l1_update_deviation_percentage: c.l1_update_deviation_percentage,
@@ -1082,7 +1116,7 @@ pub fn base_token_price_updater_config(
         base_token_addr_override: c.base_token_addr_override,
         base_token_decimals_override: c.base_token_decimals_override,
         gateway_base_token_addr_override: c.gateway_base_token_addr_override,
-        token_multiplier_setter_sk: c.token_multiplier_setter_sk.clone(),
+        token_multiplier_setter_signer,
         max_fee_per_gas_wei: l1_sender_config.max_fee_per_gas.0,
         max_priority_fee_per_gas_wei: l1_sender_config.max_priority_fee_per_gas.0,
         fallback_prices: c.fallback_prices.clone(),

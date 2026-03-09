@@ -40,14 +40,21 @@ external_price_api_client:
 
 ## Token multiplier setter
 
-For chains with base token different from ETH it's recommended to configure `token_multiplier_setter_sk`, 
-then the component will also periodically update "ETH:token" price ratio on L1. Component and node will 
-still work without it but there will be a warning in logs and ratio on L1 won't change meaning that price 
+For chains with base token different from ETH it's recommended to configure a token multiplier setter signer,
+then the component will also periodically update "ETH:token" price ratio on L1. Component and node will
+still work without it but there will be a warning in logs and ratio on L1 won't change meaning that price
 for L1->L2 txs can eventually get outdated.
 
+You can use either a local private key or a GCP KMS key:
+
 ```yaml
+# Option 1: Local private key
 base_token_price_updater:
   token_multiplier_setter_sk: "<private_key_in_hex>"
+
+# Option 2: GCP KMS key (takes priority if both are set)
+base_token_price_updater:
+  token_multiplier_setter_kms_resource: "projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}/cryptoKeyVersions/{version}"
 ```
 
 ## Mainnet recommendation

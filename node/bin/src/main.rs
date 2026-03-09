@@ -8,6 +8,7 @@ use zksync_os_internal_config::InternalConfigManager;
 use zksync_os_metadata::NODE_VERSION;
 use zksync_os_object_store::ObjectStoreMode;
 use zksync_os_observability::prometheus::PrometheusExporterConfig;
+use zksync_os_operator_signer::OperatorSignerConfig;
 use zksync_os_server::config::{
     BaseTokenPriceUpdaterConfig, BatchVerificationConfig, BatcherConfig, Config, ConfigArgs,
     ExternalPriceApiClientConfig, FeeConfig, GasAdjusterConfig, GeneralConfig, GenesisConfig,
@@ -349,15 +350,30 @@ fn build_external_config(repo: ConfigRepository<'_>) -> Config {
         .parse()
         .expect("Failed to parse fee config");
 
-    // Validate that operator keys are different (only relevant on the Main Node where they are set)
-    if let (Some(commit_sk), Some(prove_sk), Some(execute_sk)) = (
-        &l1_sender_config.operator_commit_sk,
-        &l1_sender_config.operator_prove_sk,
-        &l1_sender_config.operator_execute_sk,
-    ) && (commit_sk == prove_sk || prove_sk == execute_sk || execute_sk == commit_sk)
+    // Validate that operator signers are different (only relevant on the Main Node where they are set).
+    // NOTE: This check compares config values (key bytes for Local, resource names for KMS).
+    // It cannot detect cross-variant duplicates (e.g. a Local key and a KMS key that resolve
+    // to the same Ethereum address) without an async KMS call. Such conflicts will be caught
+    // at runtime when the wallet rejects duplicate signer addresses.
     {
-        // important: don't replace this with `assert_ne` etc - it may expose private keys in logs
-        panic!("Operator addresses for commit, prove and execute must be different");
+        let commit = OperatorSignerConfig::resolve(
+            &l1_sender_config.operator_commit_sk,
+            &l1_sender_config.operator_commit_kms_resource,
+        );
+        let prove = OperatorSignerConfig::resolve(
+            &l1_sender_config.operator_prove_sk,
+            &l1_sender_config.operator_prove_kms_resource,
+        );
+        let execute = OperatorSignerConfig::resolve(
+            &l1_sender_config.operator_execute_sk,
+            &l1_sender_config.operator_execute_kms_resource,
+        );
+        if let (Some(c), Some(p), Some(e)) = (&commit, &prove, &execute)
+            && (c == p || p == e || e == c)
+        {
+            // important: don't replace this with `assert_ne` etc - it may expose private keys in logs
+            panic!("Operator signer configs for commit, prove and execute must be different");
+        }
     }
 
     Config {
