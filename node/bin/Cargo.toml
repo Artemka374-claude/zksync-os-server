@@ -90,6 +90,7 @@ jsonrpsee = { workspace = true, default-features = false, features = [
 ] }
 rand.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
+rustls = { workspace = true }
 num.workspace = true
 
 sentry.workspace = true
