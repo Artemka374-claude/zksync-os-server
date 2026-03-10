@@ -75,6 +75,15 @@ impl SystemTxEnvelope {
         })
     }
 
+    pub fn interop_roots(&self) -> Option<Vec<InteropRoot>> {
+        let input = SystemTxInput::abi_decode(self.inner.input());
+        if let SystemTxInput::ImportInteropRoots(roots) = input {
+            Some(roots)
+        } else {
+            None
+        }
+    }
+
     pub fn hash(&self) -> &B256 {
         &self.hash
     }
