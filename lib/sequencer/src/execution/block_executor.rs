@@ -372,7 +372,7 @@ pub async fn execute_block<R: ReadStateHistory + WriteState>(
             command.protocol_version,
             block_hash_output,
             command.force_preimages,
-            command.starting_interop_event_index,
+            command.starting_interop_root_id,
         ),
         purged_txs,
     ))

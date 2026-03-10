@@ -1,6 +1,6 @@
 use crate::config::NetworkConfig;
 use crate::protocol::{ProtocolEvent, ProtocolState, ZksProtocolHandler};
-use crate::version::ZksProtocolV1;
+use crate::version::ZksProtocolV2;
 use crate::wire::replays::RecordOverride;
 use alloy::primitives::BlockNumber;
 use reth_chainspec::{ChainSpecProvider, EthChainSpec, Hardforks};
@@ -113,7 +113,7 @@ impl NetworkService {
             .network_id(Some(client.chain_spec().chain_id()))
             // Add latest version of `zks` subprotocol. In the future this can be extended so that
             // several versions are registered here.
-            .add_rlpx_sub_protocol(ZksProtocolHandler::<ZksProtocolV1, _> {
+            .add_rlpx_sub_protocol(ZksProtocolHandler::<ZksProtocolV2, _> {
                 replay,
                 node_role,
                 starting_block: Arc::new(RwLock::new(starting_block)),

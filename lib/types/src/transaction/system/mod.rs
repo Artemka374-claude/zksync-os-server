@@ -36,25 +36,30 @@ impl PartialEq for SystemTxEnvelope {
 }
 
 impl SystemTxEnvelope {
-    /// A constructor for system transaction that imports interop roots
-    pub fn import_interop_roots(roots: Vec<InteropRoot>) -> Self {
-        Self::create_from_input(SystemTxInput::ImportInteropRoots(roots))
+    /// A constructor for system transaction that imports interop roots.
+    /// `log_id` is used as the transaction salt to ensure uniqueness.
+    pub fn import_interop_roots(roots: Vec<InteropRoot>, log_id: u64) -> Self {
+        let tx_input = SystemTxInput::ImportInteropRoots(roots);
+        let transaction = SystemTx {
+            to: tx_input.to_address(),
+            input: Bytes::from(tx_input.abi_encode()),
+            salt: log_id,
+        };
+        Self {
+            hash: transaction.calculate_hash(),
+            inner: transaction,
+            subtype: OnceLock::new(),
+        }
     }
 
     /// A constructor for system transaction that sets the settlement layer chain id
     pub fn set_sl_chain_id(chain_id: ChainId) -> Self {
-        Self::create_from_input(SystemTxInput::SetSLChainId(chain_id))
-    }
-
-    fn create_from_input(tx_input: SystemTxInput) -> Self {
-        let calldata = tx_input.abi_encode();
-
+        let tx_input = SystemTxInput::SetSLChainId(chain_id);
         let transaction = SystemTx {
             to: tx_input.to_address(),
-            input: Bytes::from(calldata),
+            input: Bytes::from(tx_input.abi_encode()),
             salt: 0,
         };
-
         Self {
             hash: transaction.calculate_hash(),
             inner: transaction,
@@ -91,7 +96,7 @@ impl SystemTxEnvelope {
 
 #[derive(Clone, Debug)]
 pub struct IndexedInteropRoot {
-    pub log_index: InteropRootsLogIndex,
+    pub log_id: u64,
     pub root: InteropRoot,
 }
 
@@ -151,6 +156,7 @@ mod tx_serde {
 }
 
 /// A helper struct to store the block number and index in block of published interop roots event.
+/// Kept for backward-compatibility with the v1 network wire format.
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct InteropRootsLogIndex {
     /// Block number from which event was published.
@@ -333,11 +339,14 @@ mod tests {
     /// See https://ethereum.github.io/execution-apis/api-documentation/
     #[test]
     fn interop_roots_tx_serialization() {
-        let tx = SystemTxEnvelope::import_interop_roots(vec![InteropRoot {
-            chainId: Uint::from(1),
-            blockOrBatchNumber: Uint::from(1),
-            sides: vec![B256::ZERO],
-        }]);
+        let tx = SystemTxEnvelope::import_interop_roots(
+            vec![InteropRoot {
+                chainId: Uint::from(1),
+                blockOrBatchNumber: Uint::from(1),
+                sides: vec![B256::ZERO],
+            }],
+            0,
+        );
 
         assert_eq!(
             serde_json::to_string_pretty(&tx).unwrap(),
