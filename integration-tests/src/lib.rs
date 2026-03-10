@@ -571,7 +571,6 @@ impl MultiChainTesterBuilder {
                     l1,
                     false, // disable prover for faster tests
                     Some(chain_override),
-                    None,
                     NEXT_PROTOCOL_VERSION,
                 )
                 .await?;

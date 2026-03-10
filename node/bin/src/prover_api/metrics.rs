@@ -98,7 +98,6 @@ pub enum JobMapMethod {
     Status,
 }
 
-//TODO: proper attributes(labels in particular)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EncodeLabelValue, EncodeLabelSet)]
 #[metrics(rename_all = "snake_case", label = "proof_storage_method")]
 pub enum ProofStorageMethod {
