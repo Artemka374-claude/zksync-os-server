@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn test_zks_version_rlp_encode() {
         // Version 0 is purposefully left out as it encodes to 0x80 (prefix for 0-length string)
-        let versions = [ZksVersion::Zks1];
+        let versions = [ZksVersion::Zks1, ZksVersion::Zks2];
 
         for version in versions {
             let mut encoded = BytesMut::new();

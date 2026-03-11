@@ -49,6 +49,7 @@ impl TryFrom<v0::ReplayRecord> for StorageReplayRecord {
             block_output_hash: Default::default(),
             force_preimages: vec![],
             starting_interop_root_id: 0,
+            starting_migration_number: 0,
         })
     }
 }
@@ -154,6 +155,7 @@ impl TryFrom<v1::ReplayRecord> for StorageReplayRecord {
                 .collect(),
             // v1 format has InteropRootsLogIndex; map to 0 since block/index is not the log_id
             starting_interop_root_id: 0,
+            starting_migration_number: 0,
         })
     }
 }
@@ -230,6 +232,7 @@ impl From<StorageReplayRecord> for v2::ReplayRecord {
                 })
                 .collect(),
             starting_interop_root_id: value.starting_interop_root_id,
+            starting_migration_number: value.starting_migration_number,
         }
     }
 }
@@ -247,6 +250,7 @@ impl TryFrom<v2::ReplayRecord> for StorageReplayRecord {
                 .map(|tx| tx.try_into_recovered())
                 .collect::<Result<Vec<_>, _>>()?,
             previous_block_timestamp: value.previous_block_timestamp,
+            // Stamp replay record with this node's version
             node_version: NODE_SEMVER_VERSION.clone(),
             protocol_version: value.protocol_version,
             block_output_hash: value.block_output_hash,
@@ -256,6 +260,7 @@ impl TryFrom<v2::ReplayRecord> for StorageReplayRecord {
                 .map(|p| (p.hash, p.preimage.into()))
                 .collect(),
             starting_interop_root_id: value.starting_interop_root_id,
+            starting_migration_number: value.starting_migration_number,
         })
     }
 }

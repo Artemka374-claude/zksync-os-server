@@ -1,7 +1,7 @@
 //! Wire format version 2.
 //!
 //! Changes from v1: replaced `starting_interop_event_index: InteropRootsLogIndex`
-//! with `starting_interop_root_id: u64`.
+//! with `starting_interop_root_id: u64`. Added `starting_migration_number: u64`.
 //!
 //! Do not change this file under any circumstances. Copy it instead. May be deleted when obsolete.
 
@@ -20,6 +20,7 @@ pub struct ReplayRecord {
     pub block_output_hash: B256,
     pub force_preimages: Vec<ForcedPreimage>,
     pub starting_interop_root_id: u64,
+    pub starting_migration_number: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]

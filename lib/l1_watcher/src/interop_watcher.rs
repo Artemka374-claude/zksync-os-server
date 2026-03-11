@@ -97,7 +97,6 @@ impl ProcessRawEvents for InteropWatcher {
             );
             return Ok(());
         }
-
         let interop_root = InteropRoot {
             chainId: event.chainId,
             blockOrBatchNumber: event.blockNumber,
