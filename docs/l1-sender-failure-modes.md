@@ -28,7 +28,7 @@ See [l1-sender-architecture.md](l1-sender-architecture.md) for a general archite
 | 16 | Unexpected passthrough ordering | Medium | Yes | No | No | Fix upstream pipeline logic |
 | 17 | Malformed proof bytes (not multiple of 32) | Medium | Yes | No | No | Fix proof data |
 | 18 | Metrics wei-to-gwei conversion failure | Low | Yes | No | No | Restart (may recur on large values) |
-| 19 | Gas or blob fee cap below network price | Medium | No | No | No | Transaction delayed or stuck |
+| 19 | Gas or blob fee cap below network price | Medium | No (directly) | Yes (via #6) | No | Raise cap in config and restart |
 
 ---
 
@@ -361,6 +361,8 @@ let arr: [u8; 32] = chunk
 The following combinations are the most likely to produce sustained crash loops in production:
 
 **Flaky RPC provider** → Any `.await?` RPC call fails → crash → restart → same call fails → crash → ...
+
+**Gas fee cap below network price** → Transaction stuck in mempool → 300s timeout (failure mode 6) → crash → restart → same transaction resent (in-flight tx scenario) → crash → ...
 
 **Transaction timeout during congestion** → Crash → restart → in-flight tx scenario → crash → ...
 
