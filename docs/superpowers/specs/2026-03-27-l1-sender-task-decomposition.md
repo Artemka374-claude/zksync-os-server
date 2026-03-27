@@ -312,6 +312,42 @@ logic is not affected by this change.
 
 ---
 
+## Restart Behavior
+
+When the l1_sender errors fatally, the whole binary restarts (it runs inside
+`spawn_critical`). All in-memory state is lost:
+
+- `pending_commands` — commands received from upstream but not yet submitted
+- `in_flight` — commands submitted to L1, receipt futures dropped
+- The Watcher's `FuturesOrdered` — all outstanding futures gone
+
+On restart, upstream components re-feed commands from their last checkpointed state. The
+Submitter starts fresh with no knowledge of what was previously submitted to L1.
+
+**This behavior is identical to the current implementation.** The task decomposition does
+not change restart semantics — it only changes what happens during normal operation.
+
+### The In-Flight Gap
+
+The problematic case is a command that was submitted to L1 but not yet confirmed when the
+crash happened. That tx may still be in the L1 mempool. When the upstream re-feeds the
+same command, the Submitter tries to resubmit it. Two outcomes are possible:
+
+- **Original tx still in mempool:** `send_raw_transaction` returns "already known" or
+  "nonce too low". The Submitter treats this as `NonceTooLow` (Recoverable) and retries
+  with backoff. But the retry will keep failing — the nonce is permanently taken by the
+  in-flight tx. The sender stalls until the original tx lands.
+- **Original tx already mined:** `send_raw_transaction` returns "nonce too low"
+  immediately. Same stall until the Submitter gives up and... there is currently no exit
+  from this loop short of a manual restart.
+
+The correct handling would be: on `NonceTooLow`, query the L1 to check whether the tx at
+that nonce already executed the expected calldata, and if so, treat it as confirmed and
+forward the command downstream. This is **in-flight detection on startup**, listed as a
+follow-up in Scope.
+
+---
+
 ## Testing
 
 1. **Transient errors do not crash.** Mock provider returns RPC errors for N calls, then
