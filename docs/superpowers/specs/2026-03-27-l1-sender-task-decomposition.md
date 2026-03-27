@@ -1,18 +1,5 @@
 # L1 Sender: Phase-Based Design with Task Decomposition
 
-This document unifies two design iterations:
-
-1. **Phase-based struct** (Approach B from the earlier error-handling redesign) — replaces
-   the crash-on-any-error model with a structured retry loop and typed error categories.
-2. **Task decomposition** — extends the phase-based struct by splitting the Submitter and
-   Watcher concerns into independent tasks, eliminating phase-blocking and enabling
-   concurrent receipt polling.
-
-The phase-based struct is the foundation. Task decomposition is the architectural
-improvement that makes the phases genuinely independent.
-
----
-
 ## Problem
 
 The original L1 sender crashes on any error. Every error — transient RPC timeout, gas
