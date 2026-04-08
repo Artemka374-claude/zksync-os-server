@@ -11,6 +11,7 @@ l1_sender:
   operator_commit_sk: '0xa87f129525140129a0195736bfa0fbd20a0ed58006db714fde19b2db5efc8d9e'
   operator_prove_sk: '0xa0a22ac19c7951db475d784dc54409d8fb75058bea00246ab1edf0c9d5e4ea6e'
   operator_execute_sk: '0xcacaebd39ceaca45b4cbc62fb8ca711e5623c81f99e584a057937879dc064e1c'
+  required_confirmations: 1
 rpc:
   address: 0.0.0.0:3052
 
